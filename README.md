@@ -42,3 +42,42 @@ Build an installable APK with `flutter build apk --release`
 - `lib/logic/time_utils.dart` — free-time and slot-finding helpers.
 
 Data is held in memory, so restarting the app resets the demo.
+
+## App icon & splash
+
+The launcher icon and the launch (splash) screen use the Chrono mark on `#121116`.
+Source images live in `assets/branding/` and are drawn by `tool/make_brand_assets.py`
+(same shape and colours as `lib/widgets/chrono_mark.dart`). After changing them:
+
+```powershell
+python tool/make_brand_assets.py
+dart run flutter_launcher_icons
+dart run flutter_native_splash:create
+```
+
+While the app signs in and loads the schedule it shows the same logo (`_Loading` in `app_shell.dart`),
+so the native splash hands over without a jump.
+
+## Backend (Supabase + Gemini)
+
+The backend is in [`backend/`](backend/README.md) (Express + Supabase + Gemini). Start it first, then run the app:
+
+```powershell
+cd backend
+npm install      # first time only
+npm run dev      # http://localhost:3000
+```
+
+Then `flutter run` from the repo root. Supabase and Gemini setup: [`backend/chrono-backend-guide.md`](backend/chrono-backend-guide.md).
+`backend/.env` holds the keys and is git-ignored. Copy `backend/.env.example` to start.
+
+- Android emulator reaches the backend at `http://10.0.2.2:3000` (default).
+- Windows / web / iOS simulator use `http://localhost:3000`.
+- A real phone on the same Wi-Fi: `flutter run --dart-define=CHRONO_API_URL=http://<your-PC-IP>:3000`.
+
+Users sign up or log in with email + password (`lib/screens/auth.dart`, Supabase Auth through the backend).
+The session (access + refresh token, never the password) is kept on the device, so the app opens straight
+to the schedule next time; tapping the avatar opens the profile (name, work preferences, log out).
+Onboarding, block actions, deadlines, chat and Undo are saved to Supabase; chat replies come from Gemini.
+If the backend can't be reached the app keeps working offline with the built-in rule-based engine.
+`lib/services/api_client.dart` holds the HTTP client and JSON mapping.

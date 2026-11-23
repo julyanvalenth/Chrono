@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../data/models.dart';
+import '../screens/profile.dart' show showProfileSheet;
+import '../state/app_state.dart';
 import '../theme/tokens.dart';
 
 /// Tappable surface with a small press-in scale, no ripple (matches the design).
@@ -181,23 +183,55 @@ class ProgressBar extends StatelessWidget {
   }
 }
 
+/// The user's initial in a circle (top right of Home / Today). Tap → profile.
 class Avatar extends StatelessWidget {
-  const Avatar({super.key});
+  const Avatar({super.key, this.size = 40, this.interactive = true});
+  final double size;
+  final bool interactive;
+
   @override
   Widget build(BuildContext context) {
+    final state = AppScope.of(context);
     final s = kindStyle(Kind.personal);
-    return Semantics(
-      label: userName,
-      child: Container(
-        width: 40,
-        height: 40,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(color: s.bg, shape: BoxShape.circle),
-        child: Text(userName[0], style: poppins(15, weight: w600, color: s.ink)),
+    final name = state.userName.trim();
+    final circle = Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: s.bg, shape: BoxShape.circle),
+      child: Text(
+        name.isEmpty ? '?' : name.characters.first.toUpperCase(),
+        style: poppins(size * 0.375, weight: w600, color: s.ink),
       ),
+    );
+    if (!interactive) return ExcludeSemantics(child: circle);
+    return Pressable(
+      onTap: () => showProfileSheet(context),
+      label: 'Profile, $name',
+      child: circle,
     );
   }
 }
+
+/// Text field look shared by the auth screen and the profile sheet.
+InputDecoration chronoField(String hint, {Widget? suffix}) => InputDecoration(
+      hintText: hint,
+      hintStyle: poppins(15, color: C.ink3),
+      filled: true,
+      fillColor: C.surface,
+      suffixIcon: suffix,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+      errorStyle: poppins(12, color: C.danger),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: C.line(0.12))),
+      enabledBorder:
+          OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: C.line(0.12))),
+      focusedBorder:
+          OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: C.line(0.28))),
+      errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: C.danger.withValues(alpha: 0.6))),
+      focusedErrorBorder:
+          OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: C.danger)),
+    );
 
 class Chip2 extends StatelessWidget {
   const Chip2(this.label, {super.key, this.onTap});

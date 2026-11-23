@@ -10,7 +10,7 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  runApp(ChronoApp(state: AppState()));
+  runApp(ChronoApp(state: AppState()..connect()));
 }
 
 class ChronoApp extends StatelessWidget {

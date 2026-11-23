@@ -68,6 +68,7 @@ class Course {
     required this.end,
     required this.room,
     this.selected = true,
+    this.code = '',
   });
 
   final String id;
@@ -77,8 +78,10 @@ class Course {
   final int end;
   final String room;
   final bool selected;
+  final String code; // course code from the timetable, e.g. COMP6048 ('' if unknown)
 
-  Course toggled() => Course(id: id, name: name, days: days, start: start, end: end, room: room, selected: !selected);
+  Course toggled() =>
+      Course(id: id, name: name, days: days, start: start, end: end, room: room, selected: !selected, code: code);
 }
 
 class Deadline {
@@ -121,7 +124,6 @@ class DayInfo {
   final int date;
 }
 
-const userName = 'Nadia';
 
 const days = [
   DayInfo('MON', 'Monday', 12),
@@ -160,7 +162,7 @@ List<Block> classBlocks(List<Course> courses) => [
             kind: Kind.lecture,
             start: c.start,
             end: c.end,
-            detail: c.room.startsWith('Lab') ? c.room : 'Room ${c.room}',
+            detail: c.room.isEmpty ? null : (c.room.startsWith('Lab') ? c.room : 'Room ${c.room}'),
             courseId: c.id,
           ),
     ];

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#121116</color>
+    <!-- App background (C.bg), shown behind Flutter while it starts -->
+    <color name="chrono_bg">#121116</color>
+</resources>

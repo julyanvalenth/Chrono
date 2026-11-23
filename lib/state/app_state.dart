@@ -1,11 +1,16 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import '../data/models.dart';
 import '../logic/chrono_engine.dart';
+import '../logic/time_utils.dart' show overlaps;
+import '../services/api_client.dart';
 
-enum Stage { welcome, source, prefs, building, app }
+enum Stage { welcome, auth, source, prefs, building, app }
+
+enum AuthMode { signUp, logIn }
 
 enum AppTab { home, today, chat, deadlines }
 
@@ -25,12 +30,16 @@ class TextMessage extends ChatMessage {
 }
 
 class ProposalMessage extends ChatMessage {
-  const ProposalMessage(super.id, {required this.changes, this.status = ProposalStatus.pending, this.deadlineId});
+  const ProposalMessage(super.id, {required this.changes, this.status = ProposalStatus.pending, this.deadlineId, this.remote = false});
   final List<Change> changes;
   final ProposalStatus status;
   final String? deadlineId;
 
-  ProposalMessage withStatus(ProposalStatus s) => ProposalMessage(id, changes: changes, status: s, deadlineId: deadlineId);
+  /// true when the proposal came from the backend (apply/dismiss go through the API).
+  final bool remote;
+
+  ProposalMessage withStatus(ProposalStatus s, {List<Change>? changes}) =>
+      ProposalMessage(id, changes: changes ?? this.changes, status: s, deadlineId: deadlineId, remote: remote);
 }
 
 class ToastData {
@@ -50,17 +59,39 @@ class Prefs {
   final int breakMin;
 }
 
-const _greeting = TextMessage(
-  'hello',
-  fromUser: false,
-  text: 'Morning, Nadia. Two classes and three focus blocks today.\nTell me what changed — I’ll rearrange the rest.',
-);
 
 /// All app state lives here; widgets read it through [AppScope].
+///
+/// When [online] the app talks to chrono-backend (Supabase for data, Gemini
+/// for chat). Local state is updated first so the UI stays instant, then the
+/// change is saved to the server. When the backend can't be reached the app
+/// falls back to the built-in rule-based engine, like the original demo.
 class AppState extends ChangeNotifier {
-  AppState() {
+  AppState({ChronoApi? api}) : api = api ?? ChronoApi() {
     reset(notify: false);
   }
+
+  final ChronoApi api;
+
+  /// Signed in to chrono-backend and reachable.
+  bool online = false;
+  String? connectionError;
+
+  /// The saved session couldn't be checked because the server was unreachable.
+  bool bootFailed = false;
+
+  AuthMode authMode = AuthMode.signUp;
+  String userName = 'Student';
+  String userEmail = '';
+
+  String get firstName => userName.trim().split(RegExp(r'\s+')).first;
+
+  TextMessage get _greeting => TextMessage(
+        'hello',
+        fromUser: false,
+        text: 'Hi $firstName. Tell me what changed today — a meeting, a new deadline, feeling sick — '
+            'and I’ll rearrange the rest.',
+      );
 
   late Stage stage;
   late AppTab tab;
@@ -99,6 +130,162 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---- backend ----
+
+  /// True while [connect] runs; the shell shows the logo loading screen.
+  bool booting = false;
+
+  /// Restore the saved login and load the schedule. Safe to call again to retry.
+  Future<void> connect() async {
+    booting = true;
+    bootFailed = false;
+    notifyListeners();
+    api.onSessionExpired = _sessionExpired;
+    // Don't hold the user on the loading screen if the server is slow.
+    final giveUp = Timer(const Duration(seconds: 8), () {
+      if (booting) _set(() => booting = false);
+    });
+    try {
+      if (!await api.restoreSession()) return; // not logged in → Welcome
+      final snap = await api.me();
+      _set(() {
+        online = true;
+        connectionError = null;
+        _adoptUser(snap);
+        if (snap.onboardingComplete) {
+          _adopt(snap);
+        } else {
+          messages = [_greeting];
+          stage = Stage.source;
+        }
+      });
+      debugPrint('Chrono: connected to ${api.baseUrl} as $userEmail');
+    } catch (e) {
+      _set(() {
+        online = false;
+        connectionError = '$e';
+        // Logged in but the server can't be reached: offer a retry instead of a broken app.
+        bootFailed = api.hasSession;
+      });
+      debugPrint('Chrono: offline (${api.baseUrl}): $e');
+    } finally {
+      giveUp.cancel();
+      if (booting) _set(() => booting = false);
+    }
+  }
+
+  void _adoptUser(Snapshot snap) {
+    userName = snap.name;
+    userEmail = snap.email;
+  }
+
+  // ---- account ----
+
+  void showAuth(AuthMode mode) => _set(() {
+        authMode = mode;
+        stage = Stage.auth;
+      });
+
+  /// Create an account. Returns an error message to show, or null on success.
+  Future<String?> signUp({required String name, required String email, required String password}) =>
+      _authenticate(() => api.signUp(name: name, email: email, password: password));
+
+  /// Log in. Returns an error message to show, or null on success.
+  Future<String?> logIn({required String email, required String password}) =>
+      _authenticate(() => api.logIn(email: email, password: password));
+
+  Future<String?> _authenticate(Future<void> Function() call) async {
+    try {
+      await call();
+      final snap = await api.me();
+      _set(() {
+        reset(notify: false);
+        online = true;
+        bootFailed = false;
+        _adoptUser(snap);
+        messages = [_greeting];
+        if (snap.onboardingComplete) {
+          _adopt(snap);
+        } else {
+          stage = Stage.source;
+        }
+      });
+      return null;
+    } on ApiException catch (e) {
+      return e.message;
+    } catch (e) {
+      debugPrint('Chrono auth failed: $e');
+      return 'Couldn’t reach Chrono. Check your connection and try again.';
+    }
+  }
+
+  Future<void> logOut() async {
+    await api.logOut();
+    _set(() {
+      reset(notify: false);
+      online = false;
+      userName = 'Student';
+      userEmail = '';
+    });
+  }
+
+  void _sessionExpired() => _set(() {
+        reset(notify: false);
+        online = false;
+        authMode = AuthMode.logIn;
+        stage = Stage.auth;
+        toast = ToastData(++_toastId, 'Session expired · please log in again');
+      });
+
+  /// Change the display name (profile).
+  void setName(String name) {
+    final clean = name.trim();
+    if (clean.isEmpty || clean == userName) return;
+    _set(() => userName = clean);
+    _sync(() => api.updatePreferences(name: clean));
+  }
+
+  void _adopt(Snapshot snap) {
+    if (snap.courses.isNotEmpty) courses = snap.courses;
+    blocks = snap.blocks;
+    deadlines = snap.deadlines;
+    prefs = Prefs(
+      focus: FocusWindow.values.firstWhere((f) => f.name == snap.prefsFocus, orElse: () => FocusWindow.morning),
+      bedtime: snap.bedtime,
+      breakMin: snap.breakMin,
+    );
+    messages = [
+      _greeting,
+      for (final m in snap.messages) ?_messageFromJson(m),
+    ];
+    stage = Stage.app;
+  }
+
+  ChatMessage? _messageFromJson(Map<String, dynamic> j) {
+    final id = j['id'] as String;
+    if (j['type'] == 'proposal') {
+      return ProposalMessage(
+        id,
+        changes: changesFromJson((j['changes'] as List?) ?? const [], id),
+        status: ProposalStatus.values.firstWhere((s) => s.name == j['status'], orElse: () => ProposalStatus.pending),
+        deadlineId: j['deadline_id'] as String?,
+        remote: true,
+      );
+    }
+    final text = j['content'] as String?;
+    if (text == null) return null;
+    return TextMessage(id, fromUser: j['from_user'] == true, text: text);
+  }
+
+  /// Run a server call in the background; local state is already updated.
+  void _sync(Future<void> Function() call) {
+    if (!online) return;
+    call().catchError((Object e) {
+      debugPrint('Chrono sync failed: $e');
+      _set(() => toast = ToastData(++_toastId, 'Couldn’t save to server'));
+    });
+  }
+
   // ---- navigation ----
   void goStage(Stage s) => _set(() => stage = s);
 
@@ -129,19 +316,81 @@ class AppState extends ChangeNotifier {
   void toggleCourse(String id) =>
       _set(() => courses = [for (final c in courses) c.id == id ? c.toggled() : c]);
 
-  void setPrefs({FocusWindow? focus, String? bedtime, int? breakMin}) => _set(() {
-        prefs = Prefs(
-          focus: focus ?? prefs.focus,
-          bedtime: bedtime ?? prefs.bedtime,
-          breakMin: breakMin ?? prefs.breakMin,
-        );
-      });
+  /// Read a class timetable with the AI (photo/screenshot or typed text) and use
+  /// the result as this user's courses. Returns a message to show when nothing
+  /// usable came back, or null on success. Offline it falls back to the demo courses.
+  Future<String?> readSchedule({String? text, Uint8List? image, String mimeType = 'image/jpeg'}) async {
+    if (!online) {
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+      _set(() => courses = [...seedCourses]);
+      return null; // demo data, like the original prototype
+    }
+    try {
+      final r = await api.parseSchedule(text: text, image: image, mimeType: mimeType);
+      if (r.courses.isEmpty) {
+        return r.note.isNotEmpty ? r.note : 'No classes found. Try a clearer photo or type them in.';
+      }
+      _set(() => courses = r.courses);
+      return null;
+    } on ApiException catch (e) {
+      return e.message;
+    } catch (e) {
+      debugPrint('Chrono schedule read failed: $e');
+      return 'Couldn’t reach Chrono. Check your connection and try again.';
+    }
+  }
 
-  void finishOnboarding() => _set(() {
-        stage = Stage.app;
-        tab = AppTab.home;
-        blocks = [...classBlocks(courses), ...seedFlexBlocks];
+  void setPrefs({FocusWindow? focus, String? bedtime, int? breakMin}) {
+    _set(() {
+      prefs = Prefs(
+        focus: focus ?? prefs.focus,
+        bedtime: bedtime ?? prefs.bedtime,
+        breakMin: breakMin ?? prefs.breakMin,
+      );
+    });
+    // During onboarding they are saved with the rest at the end; afterwards (profile) right away.
+    if (stage == Stage.app) {
+      _sync(() => api.updatePreferences(focus: focus?.name, bedtime: bedtime, breakMin: breakMin));
+    }
+  }
+
+  void finishOnboarding() {
+    final lectures = classBlocks(courses);
+    // Starter (demo) blocks must not sit on top of a real class.
+    final starters = [
+      for (final f in seedFlexBlocks)
+        if (!lectures.any((l) => l.day == f.day && overlaps(l.start, l.end, f.start, f.end))) f,
+    ];
+    _set(() {
+      stage = Stage.app;
+      tab = AppTab.home;
+      blocks = [...lectures, ...starters];
+    });
+    if (!online) return;
+    api
+        .saveOnboarding(
+          focus: prefs.focus.name,
+          bedtime: prefs.bedtime,
+          breakMin: prefs.breakMin,
+          courses: courses,
+          flexBlocks: starters,
+          deadlines: deadlines,
+        )
+        .then((snap) => _set(() {
+              // Server copies carry real (uuid) ids from here on.
+              courses = snap.courses;
+              blocks = snap.blocks;
+              deadlines = snap.deadlines;
+              sheetId = null;
+            }))
+        .catchError((Object e) {
+      debugPrint('Chrono onboarding sync failed: $e');
+      _set(() {
+        online = false;
+        toast = ToastData(++_toastId, 'Server unavailable · working offline');
       });
+    });
+  }
 
   // ---- blocks ----
   void openSheet(String? id) => _set(() => sheetId = id);
@@ -156,6 +405,7 @@ class AppState extends ChangeNotifier {
         toast = _toast(b.done ? '${b.title} reopened' : '${b.title} marked done');
         blocks = [for (final x in blocks) x.id == id ? x.copyWith(done: !x.done) : x];
         sheetId = null;
+        _sync(() => api.toggleDone(id));
       });
 
   void push(String id, int minutes) => _set(() {
@@ -168,6 +418,7 @@ class AppState extends ChangeNotifier {
                 : x.copyWith(clearOrigin: true),
         ];
         sheetId = null;
+        _sync(() => api.pushBlock(id, minutes));
       });
 
   void remove(String id) => _set(() {
@@ -175,6 +426,7 @@ class AppState extends ChangeNotifier {
         toast = _toast('${b.title} removed');
         blocks = blocks.where((x) => x.id != id).toList();
         sheetId = null;
+        _sync(() => api.deleteBlock(id));
       });
 
   // ---- chat ----
@@ -185,17 +437,45 @@ class AppState extends ChangeNotifier {
       messages = [...messages, TextMessage('m${++_msgId}', fromUser: true, text: clean)];
       thinking = true;
     });
-    Timer(const Duration(milliseconds: 900), () {
-      final r = respond(clean, blocks, deadlines);
+    if (online) {
+      _sendRemote(clean);
+    } else {
+      Timer(const Duration(milliseconds: 900), () => _replyLocally(clean));
+    }
+  }
+
+  /// Ask Gemini through the backend. The app's demo clock is sent so the AI
+  /// plans around the same "now" the UI shows.
+  Future<void> _sendRemote(String text) async {
+    try {
+      final r = await api.chat(text, day: today, now: now);
       _set(() {
         thinking = false;
         messages = [
           ...messages,
-          TextMessage('m${++_msgId}', fromUser: false, text: r.text),
-          if (r.changes.isNotEmpty) ProposalMessage('m${++_msgId}', changes: r.changes, deadlineId: r.deadlineId),
+          TextMessage(r.aiId, fromUser: false, text: r.text),
+          if (r.proposalId != null && r.changes.isNotEmpty)
+            ProposalMessage(r.proposalId!, changes: r.changes, deadlineId: r.deadlineId, remote: true),
         ];
-        if (r.deadline != null) deadlines = [...deadlines, r.deadline!];
+        if (r.newDeadline != null) deadlines = [...deadlines, r.newDeadline!];
       });
+    } catch (e) {
+      debugPrint('Chrono chat failed, answering offline: $e');
+      _replyLocally(text, offline: true);
+    }
+  }
+
+  void _replyLocally(String clean, {bool offline = false}) {
+    final r = respond(clean, blocks, deadlines);
+    _set(() {
+      thinking = false;
+      messages = [
+        ...messages,
+        TextMessage('m${++_msgId}', fromUser: false, text: r.text),
+        if (r.changes.isNotEmpty) ProposalMessage('m${++_msgId}', changes: r.changes, deadlineId: r.deadlineId),
+      ];
+      if (r.deadline != null) deadlines = [...deadlines, r.deadline!];
+      if (offline) toast = ToastData(++_toastId, 'Server unreachable · offline reply');
     });
   }
 
@@ -204,7 +484,10 @@ class AppState extends ChangeNotifier {
     if (p == null || p.status != ProposalStatus.pending) return;
     _set(() {
       messages = [for (final m in messages) m.id == messageId ? p.withStatus(decision) : m];
-      if (decision == ProposalStatus.dismissed) return;
+      if (decision == ProposalStatus.dismissed) {
+        if (p.remote) _sync(() => api.dismiss(p.id));
+        return;
+      }
       final added = p.changes.whereType<AddChange>().fold(0, (s, c) => s + c.block.length);
       final n = p.changes.length;
       toast = _toast('Schedule updated · $n change${n > 1 ? 's' : ''}', focus: [for (final c in p.changes) c.targetId]);
@@ -212,12 +495,67 @@ class AppState extends ChangeNotifier {
       if (p.deadlineId != null) {
         deadlines = [for (final d in deadlines) d.id == p.deadlineId ? d.copyWith(planned: d.planned + added) : d];
       }
+      if (p.remote) {
+        _applyRemote(p);
+      } else {
+        // Offline-engine proposal while online: save the resulting schedule.
+        _sync(() async {
+          final server = await api.replaceBlocks(blocks);
+          _set(() => blocks = server);
+        });
+      }
     });
   }
 
+  Future<void> _applyRemote(ProposalMessage p) async {
+    if (!online) return;
+    try {
+      final r = await api.apply(p.id);
+      // Swap the temporary ids of added blocks for the ones the server made.
+      final tempIds = [for (final c in p.changes.whereType<AddChange>()) c.block.id];
+      final idMap = {
+        for (var i = 0; i < tempIds.length && i < r.addedIds.length; i++) tempIds[i]: r.addedIds[i],
+      };
+      final fixed = [
+        for (final c in p.changes)
+          if (c is AddChange && idMap.containsKey(c.block.id)) AddChange(_withId(c.block, idMap[c.block.id]!)) else c,
+      ];
+      _set(() {
+        blocks = r.blocks;
+        deadlines = r.deadlines;
+        messages = [for (final m in messages) m.id == p.id ? p.withStatus(ProposalStatus.applied, changes: fixed) : m];
+        final t = toast;
+        if (t != null && t.focusIds.any(idMap.containsKey)) {
+          toast = ToastData(t.id, t.text,
+              undoBlocks: t.undoBlocks,
+              undoDeadlines: t.undoDeadlines,
+              focusIds: [for (final f in t.focusIds) idMap[f] ?? f]);
+        }
+      });
+    } catch (e) {
+      debugPrint('Chrono apply failed: $e');
+      _set(() => toast = ToastData(++_toastId, 'Couldn’t save to server'));
+    }
+  }
+
+  Block _withId(Block b, String id) => Block(
+        id: id,
+        day: b.day,
+        title: b.title,
+        kind: b.kind,
+        start: b.start,
+        end: b.end,
+        detail: b.detail,
+        origin: b.origin,
+        done: b.done,
+        courseId: b.courseId,
+      );
+
   // ---- deadlines ----
-  void toggleDeadline(String id) =>
-      _set(() => deadlines = [for (final d in deadlines) d.id == id ? d.copyWith(done: !d.done) : d]);
+  void toggleDeadline(String id) => _set(() {
+        deadlines = [for (final d in deadlines) d.id == id ? d.copyWith(done: !d.done) : d];
+        _sync(() => api.toggleDeadline(id));
+      });
 
   // ---- toast ----
   void undo() => _set(() {
@@ -226,12 +564,28 @@ class AppState extends ChangeNotifier {
         blocks = t.undoBlocks!;
         deadlines = t.undoDeadlines!;
         toast = ToastData(++_toastId, 'Change undone');
+        final b = blocks, d = deadlines;
+        _sync(() async {
+          await api.replaceBlocks(b);
+          await api.replaceDeadlines(d);
+        });
       });
 
   void dismissToast(int id) {
     if (toast?.id != id) return;
     _set(() => toast = null);
   }
+
+  /// Demo menu "Reset": clear local state and the server copy.
+  void resetDemo() {
+    reset(notify: false);
+    if (online) stage = Stage.source; // still logged in: start onboarding again
+    notifyListeners();
+    _sync(api.wipe);
+  }
+
+  /// Id of the first block called [title] today (demo menu shortcut).
+  String? blockIdByTitle(String title) => blocks.where((b) => b.day == today && b.title == title).firstOrNull?.id;
 
   /// Jump straight to a screen (used by the demo menu).
   void jump({Stage? stage, AppTab? tab, int? day, String? sheet}) => _set(() {

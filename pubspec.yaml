@@ -35,6 +35,9 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   google_fonts: ^8.2.1
+  http: ^1.6.0
+  shared_preferences: ^2.5.6
+  image_picker: ^1.2.4
 
 dev_dependencies:
   flutter_test:
@@ -46,6 +49,8 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+  flutter_native_splash: ^2.4.7
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -88,3 +93,31 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# App icon — regenerate with: dart run flutter_launcher_icons
+# (source images come from tool/make_brand_assets.py)
+flutter_launcher_icons:
+  image_path: "assets/branding/app_icon.png"
+  android: "ic_launcher"
+  adaptive_icon_background: "#121116"
+  adaptive_icon_foreground: "assets/branding/app_icon_foreground.png"
+  ios: true
+  remove_alpha_ios: true
+  web:
+    generate: true
+    image_path: "assets/branding/app_icon.png"
+    background_color: "#121116"
+    theme_color: "#121116"
+
+# Launch (splash) screen — regenerate with: dart run flutter_native_splash:create
+flutter_native_splash:
+  color: "#121116"
+  image: "assets/branding/splash_logo.png"
+  android_12:
+    color: "#121116"
+    image: "assets/branding/splash_logo_android12.png"
+    icon_background_color: "#121116"
+  android: true
+  ios: true
+  web: true
+  fullscreen: false

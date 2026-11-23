@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../data/models.dart';
 import '../logic/time_utils.dart';
@@ -28,7 +30,7 @@ class WelcomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = AppScope.read(context);
+    final state = AppScope.of(context);
     return Padding(
       padding: _screenPadding(context, top: 10),
       child: Column(
@@ -39,19 +41,28 @@ class WelcomeScreen extends StatelessWidget {
             const SizedBox(width: 8),
             Text('Chrono', style: poppins(17, weight: w700, letterSpacing: -0.34)),
           ]),
-          const Spacer(),
-          Semantics(
-            label: 'Example day',
-            child: Column(
-              children: [
-                for (final p in _preview) ...[
-                  _PreviewRow(time: p.$1, title: p.$2, width: p.$3, tag: p.$4, kind: p.$5),
-                  const SizedBox(height: 8),
-                ],
-              ],
+          // The example day takes the free space; on very short screens it's dropped
+          // so the headline and buttons always fit.
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, box) => box.maxHeight < 200
+                  ? const SizedBox.shrink()
+                  : Center(
+                      child: Semantics(
+                        label: 'Example day',
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (final p in _preview) ...[
+                              _PreviewRow(time: p.$1, title: p.$2, width: p.$3, tag: p.$4, kind: p.$5),
+                              const SizedBox(height: 8),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
             ),
           ),
-          const Spacer(),
           Text.rich(
             TextSpan(children: [
               const TextSpan(text: 'Plan less.\n'),
@@ -68,8 +79,25 @@ class WelcomeScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 27),
-          Btn(label: 'Get started', onTap: () => state.goStage(Stage.source)),
-          const SizedBox(height: 20),
+          Btn(
+            label: 'Get started',
+            onTap: () => state.online ? state.goStage(Stage.source) : state.showAuth(AuthMode.signUp),
+          ),
+          if (!state.online) ...[
+            const SizedBox(height: 6),
+            Center(
+              child: TextButton(
+                onPressed: () => state.showAuth(AuthMode.logIn),
+                child: Text.rich(
+                  TextSpan(children: [
+                    TextSpan(text: 'Already have an account? ', style: poppins(13.5, color: C.ink2)),
+                    TextSpan(text: 'Log in', style: poppins(13.5, weight: w600, color: C.lime)),
+                  ]),
+                ),
+              ),
+            ),
+          ] else
+            const SizedBox(height: 20),
         ],
       ),
     );
@@ -159,19 +187,83 @@ class ScheduleSourceScreen extends StatefulWidget {
 class _ScheduleSourceScreenState extends State<ScheduleSourceScreen> {
   var _mode = _SourceMode.choose;
   final _typed = TextEditingController();
-  Timer? _timer;
+  String? _error;
 
-  void _read() {
-    setState(() => _mode = _SourceMode.reading);
-    _timer?.cancel();
-    _timer = Timer(const Duration(milliseconds: 1800), () {
-      if (mounted) setState(() => _mode = _SourceMode.found);
+  /// Send the typed text to the AI.
+  Future<void> _readText() async {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _mode = _SourceMode.reading;
+      _error = null;
+    });
+    final err = await AppScope.read(context).readSchedule(text: _typed.text);
+    if (!mounted) return;
+    setState(() {
+      _error = err;
+      _mode = err == null ? _SourceMode.found : _SourceMode.type;
     });
   }
 
+  /// Pick a timetable photo/screenshot and send it to the AI.
+  Future<void> _scan() async {
+    final source = kIsWeb ? ImageSource.gallery : await _pickSource();
+    if (source == null || !mounted) return;
+    XFile? file;
+    try {
+      // Downscale so the upload stays small; timetable text is still easy to read at this size.
+      file = await ImagePicker().pickImage(source: source, maxWidth: 1800, maxHeight: 1800, imageQuality: 85);
+    } catch (e) {
+      setState(() => _error = 'Couldn’t open the ${source == ImageSource.camera ? 'camera' : 'gallery'}.');
+      return;
+    }
+    if (file == null || !mounted) return;
+    final state = AppScope.read(context);
+    setState(() {
+      _mode = _SourceMode.reading;
+      _error = null;
+    });
+    final bytes = await file.readAsBytes();
+    final name = file.name.toLowerCase();
+    final mime = file.mimeType ??
+        (name.endsWith('.png') ? 'image/png' : name.endsWith('.webp') ? 'image/webp' : 'image/jpeg');
+    final err = await state.readSchedule(image: bytes, mimeType: mime);
+    if (!mounted) return;
+    setState(() {
+      _error = err;
+      _mode = err == null ? _SourceMode.found : _SourceMode.choose;
+    });
+  }
+
+  Future<ImageSource?> _pickSource() => showModalBottomSheet<ImageSource>(
+        context: context,
+        backgroundColor: C.sheet,
+        barrierColor: const Color(0x9E000000),
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+        builder: (ctx) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text('Add your timetable', style: poppins(15, weight: w600)),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined, color: C.ink),
+                title: Text('Choose a screenshot', style: poppins(14, weight: w500)),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_camera_outlined, color: C.ink),
+                title: Text('Take a photo', style: poppins(14, weight: w500)),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+            ]),
+          ),
+        ),
+      );
+
   @override
   void dispose() {
-    _timer?.cancel();
     _typed.dispose();
     super.dispose();
   }
@@ -217,22 +309,36 @@ class _ScheduleSourceScreenState extends State<ScheduleSourceScreen> {
     );
   }
 
+  Widget _errorText() => _error == null
+      ? const SizedBox.shrink()
+      : Semantics(
+          liveRegion: true,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(_error!, style: poppins(13, color: C.danger, lineHeight: 18.2)),
+          ),
+        );
+
   Widget _content(AppState state) {
     switch (_mode) {
       case _SourceMode.choose:
-        return Column(children: [
+        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           _OptionCard(
             featured: true,
             title: 'Scan a timetable screenshot',
             desc: 'Photo of your KRS or campus portal — AI reads courses, days and rooms.',
-            onTap: _read,
+            onTap: _scan,
           ),
           const SizedBox(height: 10),
           _OptionCard(
             title: 'Type it to Chrono',
             desc: '“Stats Tue & Thu 10am, HCI Friday 9…”',
-            onTap: () => setState(() => _mode = _SourceMode.type),
+            onTap: () => setState(() {
+              _mode = _SourceMode.type;
+              _error = null;
+            }),
           ),
+          _errorText(),
         ]);
       case _SourceMode.type:
         return Container(
@@ -269,9 +375,10 @@ class _ScheduleSourceScreenState extends State<ScheduleSourceScreen> {
                 height: 46,
                 radius: 14,
                 fontSize: 14,
-                onTap: _typed.text.trim().isEmpty ? null : _read,
+                onTap: _typed.text.trim().isEmpty ? null : _readText,
               ),
             ),
+            _errorText(),
           ]),
         );
       case _SourceMode.reading:
@@ -295,7 +402,7 @@ class _ScheduleSourceScreenState extends State<ScheduleSourceScreen> {
       case _SourceMode.found:
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(
-            '✓ FOUND ${state.courses.length} COURSES — UNTICK ANY TO SKIP',
+            '✓ FOUND ${state.courses.length} ${state.courses.length == 1 ? 'COURSE' : 'COURSES'} — UNTICK ANY TO SKIP',
             style: poppins(11, weight: w500, color: C.green, letterSpacing: 0.44),
           ),
           const SizedBox(height: 9),
@@ -446,7 +553,6 @@ class PreferencesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
-    final prefs = state.prefs;
     return Padding(
       padding: _screenPadding(context),
       child: Column(
@@ -458,39 +564,7 @@ class PreferencesScreen extends StatelessWidget {
           const SizedBox(height: 16),
           Expanded(
             child: SingleChildScrollView(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                _Legend('I focus best in the…'),
-                Row(children: [
-                  for (final (i, o) in const [
-                    (FocusWindow.morning, 'Morning', '08–12'),
-                    (FocusWindow.afternoon, 'Afternoon', '13–17'),
-                    (FocusWindow.night, 'Night', '19–23'),
-                  ].indexed) ...[
-                    if (i > 0) const SizedBox(width: 8),
-                    Expanded(
-                      child: _Pick(
-                        on: prefs.focus == o.$1,
-                        tall: true,
-                        label: o.$2,
-                        hint: o.$3,
-                        onTap: () => state.setPrefs(focus: o.$1),
-                      ),
-                    ),
-                  ],
-                ]),
-                const SizedBox(height: 20),
-                _Legend('Bedtime'),
-                Wrap(spacing: 8, runSpacing: 8, children: [
-                  for (final t in const ['22:00', '23:00', '00:00'])
-                    _Pick(on: prefs.bedtime == t, label: t, onTap: () => state.setPrefs(bedtime: t)),
-                ]),
-                const SizedBox(height: 20),
-                _Legend('Break between blocks'),
-                Wrap(spacing: 8, runSpacing: 8, children: [
-                  for (final m in const [10, 15, 30])
-                    _Pick(on: prefs.breakMin == m, label: '$m min', onTap: () => state.setPrefs(breakMin: m)),
-                ]),
-              ]),
+              child: const WorkPrefsFields(),
             ),
           ),
           const SizedBox(height: 16),
@@ -506,8 +580,52 @@ class PreferencesScreen extends StatelessWidget {
   }
 }
 
-class _Legend extends StatelessWidget {
-  const _Legend(this.text);
+/// Focus window, bedtime and break pickers — used in onboarding and the profile.
+class WorkPrefsFields extends StatelessWidget {
+  const WorkPrefsFields({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final state = AppScope.of(context);
+    final prefs = state.prefs;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        PickLegend('I focus best in the…'),
+        Row(children: [
+          for (final (i, o) in const [
+            (FocusWindow.morning, 'Morning', '08–12'),
+            (FocusWindow.afternoon, 'Afternoon', '13–17'),
+            (FocusWindow.night, 'Night', '19–23'),
+          ].indexed) ...[
+            if (i > 0) const SizedBox(width: 8),
+            Expanded(
+              child: PickChip(
+                on: prefs.focus == o.$1,
+                tall: true,
+                label: o.$2,
+                hint: o.$3,
+                onTap: () => state.setPrefs(focus: o.$1),
+              ),
+            ),
+          ],
+        ]),
+        const SizedBox(height: 20),
+        PickLegend('Bedtime'),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final t in const ['22:00', '23:00', '00:00'])
+            PickChip(on: prefs.bedtime == t, label: t, onTap: () => state.setPrefs(bedtime: t)),
+        ]),
+        const SizedBox(height: 20),
+        PickLegend('Break between blocks'),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final m in const [10, 15, 30])
+            PickChip(on: prefs.breakMin == m, label: '$m min', onTap: () => state.setPrefs(breakMin: m)),
+        ]),
+    ]);
+  }
+}
+
+class PickLegend extends StatelessWidget {
+  const PickLegend(this.text, {super.key});
   final String text;
   @override
   Widget build(BuildContext context) => Padding(
@@ -516,8 +634,8 @@ class _Legend extends StatelessWidget {
       );
 }
 
-class _Pick extends StatelessWidget {
-  const _Pick({required this.on, required this.label, required this.onTap, this.hint, this.tall = false});
+class PickChip extends StatelessWidget {
+  const PickChip({super.key, required this.on, required this.label, required this.onTap, this.hint, this.tall = false});
   final bool on;
   final String label;
   final String? hint;

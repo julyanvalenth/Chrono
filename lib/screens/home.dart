@@ -38,7 +38,7 @@ class HomeScreen extends StatelessWidget {
                 Text('${days[today].long.toUpperCase()} · ${days[today].date} OCT', style: metaStyle),
                 const SizedBox(height: 2),
                 Text(
-                  'Good morning,\n$userName',
+                  'Good morning,\n${state.firstName}',
                   style: poppins(29, weight: w600, lineHeight: 30.45, letterSpacing: -0.58),
                 ),
               ]),
