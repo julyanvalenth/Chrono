@@ -715,7 +715,7 @@ class _BuildingScreenState extends State<BuildingScreen> {
     final open = state.deadlines.where((d) => !d.done).length;
     final steps = [
       'Placing $courses course${courses == 1 ? '' : 's'} as fixed blocks',
-      'Fitting $open deadlines into focus windows',
+      open == 0 ? 'Keeping your ${state.prefs.focus.name} focus window free' : 'Fitting $open deadline${open == 1 ? '' : 's'} into focus windows',
       'Adding ${state.prefs.breakMin}-min breaks, protecting ${state.prefs.bedtime} bedtime',
       'Leaving room for the unexpected',
     ];

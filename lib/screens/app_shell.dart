@@ -623,7 +623,7 @@ void showDemoMenu(BuildContext context) {
         stage: Stage.app,
         tab: AppTab.today,
         day: today,
-        sheet: state.blockIdByTitle('Algorithm quiz prep'),
+        sheet: state.blocks.where((b) => b.day == today).firstOrNull?.id,
       ),
     ),
     ('Chat with Chrono', () => state.jump(stage: Stage.app, tab: AppTab.chat)),

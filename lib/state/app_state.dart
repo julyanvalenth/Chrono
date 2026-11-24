@@ -5,7 +5,6 @@ import 'package:flutter/widgets.dart';
 
 import '../data/models.dart';
 import '../logic/chrono_engine.dart';
-import '../logic/time_utils.dart' show overlaps;
 import '../services/api_client.dart';
 
 enum Stage { welcome, auth, source, prefs, building, app }
@@ -131,10 +130,11 @@ class AppState extends ChangeNotifier {
   void reset({bool notify = true}) {
     stage = Stage.welcome;
     tab = AppTab.home;
-    courses = [...seedCourses];
+    // A new user starts empty: their classes come from the timetable they scan or type.
+    courses = [];
     prefs = const Prefs();
-    blocks = [...classBlocks(courses), ...seedFlexBlocks];
-    deadlines = [...seedDeadlines];
+    blocks = [];
+    deadlines = [];
     messages = [_greeting];
     thinking = false;
     selectedDay = today;
@@ -337,13 +337,9 @@ class AppState extends ChangeNotifier {
 
   /// Read a class timetable with the AI (photo/screenshot or typed text) and use
   /// the result as this user's courses. Returns a message to show when nothing
-  /// usable came back, or null on success. Offline it falls back to the demo courses.
+  /// usable came back, or null on success.
   Future<String?> readSchedule({String? text, Uint8List? image, String mimeType = 'image/jpeg'}) async {
-    if (!online) {
-      await Future<void>.delayed(const Duration(milliseconds: 900));
-      _set(() => courses = [...seedCourses]);
-      return null; // demo data, like the original prototype
-    }
+    if (!online) return 'Couldn’t reach Chrono. Check your connection and try again.';
     try {
       final r = await api.parseSchedule(text: text, image: image, mimeType: mimeType);
       if (r.courses.isEmpty) {
@@ -374,16 +370,14 @@ class AppState extends ChangeNotifier {
   }
 
   void finishOnboarding() {
+    // Only the user's own classes. Focus blocks, tasks and deadlines are added
+    // later by the user (chat, or "Plan with Chrono").
     final lectures = classBlocks(courses);
-    // Starter (demo) blocks must not sit on top of a real class.
-    final starters = [
-      for (final f in seedFlexBlocks)
-        if (!lectures.any((l) => l.day == f.day && overlaps(l.start, l.end, f.start, f.end))) f,
-    ];
     _set(() {
       stage = Stage.app;
       tab = AppTab.home;
-      blocks = [...lectures, ...starters];
+      blocks = lectures;
+      deadlines = [];
     });
     if (!online) return;
     api
@@ -392,8 +386,8 @@ class AppState extends ChangeNotifier {
           bedtime: prefs.bedtime,
           breakMin: prefs.breakMin,
           courses: courses,
-          flexBlocks: starters,
-          deadlines: deadlines,
+          flexBlocks: const [],
+          deadlines: const [],
         )
         .then((snap) => _set(() {
               // Server copies carry real (uuid) ids from here on.
@@ -603,8 +597,6 @@ class AppState extends ChangeNotifier {
     _sync(api.wipe);
   }
 
-  /// Id of the first block called [title] today (demo menu shortcut).
-  String? blockIdByTitle(String title) => blocks.where((b) => b.day == today && b.title == title).firstOrNull?.id;
 
   /// Jump straight to a screen (used by the demo menu).
   void jump({Stage? stage, AppTab? tab, int? day, String? sheet}) => _set(() {
