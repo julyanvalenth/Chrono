@@ -89,6 +89,32 @@ class Prefs {
 class AppState extends ChangeNotifier {
   AppState({ChronoApi? api}) : api = api ?? ChronoApi() {
     reset(notify: false);
+    _startClock();
+  }
+
+  Timer? _clock;
+
+  /// Redraw on every new minute so "now" (the now line, "Happening now",
+  /// minutes left, the greeting and the date) follows the real clock.
+  void _startClock() {
+    final n = DateTime.now();
+    _clock = Timer(
+      Duration(seconds: 60 - n.second, milliseconds: -n.millisecond),
+      () {
+        notifyListeners();
+        _clock = Timer.periodic(
+          const Duration(minutes: 1),
+          (_) => notifyListeners(),
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _clock?.cancel();
+    _ticker?.cancel();
+    super.dispose();
   }
 
   final ChronoApi api;
@@ -173,12 +199,6 @@ class AppState extends ChangeNotifier {
       }
       notifyListeners();
     });
-  }
-
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
   }
 
   // ---- backend ----
@@ -442,11 +462,14 @@ class AppState extends ChangeNotifier {
   }
 
   void finishOnboarding() {
+    // Only the user's own classes. Focus blocks, tasks and deadlines are added
+    // later by the user (chat, or "Plan with Chrono").
     final lectures = classBlocks(courses);
     _set(() {
       stage = Stage.app;
       tab = AppTab.home;
       blocks = lectures;
+      deadlines = [];
     });
     if (!online) {
       _set(() => pendingChanges = true);
@@ -459,7 +482,7 @@ class AppState extends ChangeNotifier {
           breakMin: prefs.breakMin,
           courses: courses,
           flexBlocks: const [],
-          deadlines: deadlines,
+          deadlines: const [],
         )
         .then(
           (snap) => _set(() {

@@ -84,6 +84,6 @@ const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satu
 
 export function dayName(d, today) {
   if (d === today) return 'Today';
-  if (d === today + 1) return 'Tomorrow';
+  if (d === (today + 1) % 7) return 'Tomorrow'; // the week repeats: Sunday → Monday
   return DAY_NAMES[d] ?? `Day ${d}`;
 }

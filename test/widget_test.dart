@@ -11,6 +11,12 @@ import 'package:chrono/theme/tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+AppState _newState() {
+  final state = AppState();
+  addTearDown(state.dispose);
+  return state;
+}
+
 /// Minimal host so a single screen can be mounted without the tab shell.
 Widget host(AppState state, Widget child) => AppScope(
   state: state,
@@ -72,12 +78,15 @@ class _FakeApi extends ChronoApi {
 
 void main() {
   testWidgets('app builds on the welcome screen', (tester) async {
-    await tester.pumpWidget(ChronoApp(state: AppState()));
+    final state = _newState();
+    await tester.pumpWidget(ChronoApp(state: state));
     expect(find.byType(ChronoApp), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('Welcome has no example schedule data', (tester) async {
-    await tester.pumpWidget(host(AppState(), const WelcomeScreen()));
+    await tester.pumpWidget(host(_newState(), const WelcomeScreen()));
     await tester.pumpAndSettle();
 
     expect(find.text('Data Structures'), findsNothing);
@@ -87,14 +96,14 @@ void main() {
   });
 
   test('a fresh state starts empty, with no demo schedule', () {
-    final state = AppState();
+    final state = _newState();
     expect(state.courses, isEmpty);
     expect(state.blocks, isEmpty);
     expect(state.deadlines, isEmpty);
   });
 
   test('offline preference edits stay pending', () {
-    final state = AppState()
+    final state = _newState()
       ..online = false
       ..stage = Stage.app;
     state.setPrefs(focus: FocusWindow.evening);
@@ -180,7 +189,7 @@ void main() {
   });
 
   testWidgets('Home shows a sync button and the real greeting', (tester) async {
-    final state = AppState()..userName = 'Nadia';
+    final state = _newState()..userName = 'Nadia';
     state.stage = Stage.app;
     await tester.pumpWidget(host(state, const HomeScreen()));
     await tester.pumpAndSettle();
@@ -193,7 +202,7 @@ void main() {
   testWidgets('Home keeps the sync button visible for pending changes', (
     tester,
   ) async {
-    final state = AppState()
+    final state = _newState()
       ..stage = Stage.app
       ..pendingChanges = true;
     await tester.pumpWidget(host(state, const HomeScreen()));
@@ -207,7 +216,7 @@ void main() {
   ) async {
     appClock = () => DateTime(2026, 11, 24, 14, 5);
     addTearDown(() => appClock = DateTime.now);
-    final state = AppState()
+    final state = _newState()
       ..stage = Stage.app
       ..blocks = [
         const Block(
@@ -243,7 +252,7 @@ void main() {
   ) async {
     appClock = () => DateTime(2026, 12, 31, 10);
     addTearDown(() => appClock = DateTime.now);
-    final state = AppState()
+    final state = _newState()
       ..stage = Stage.app
       ..selectedDay = 4;
     await tester.pumpWidget(host(state, const TodayScreen()));
@@ -253,7 +262,7 @@ void main() {
   });
 
   testWidgets('work preferences offer more than three choices', (tester) async {
-    final state = AppState();
+    final state = _newState();
     await tester.pumpWidget(
       host(state, const SingleChildScrollView(child: WorkPrefsFields())),
     );
@@ -267,7 +276,7 @@ void main() {
   });
 
   testWidgets('picking a preference stores it', (tester) async {
-    final state = AppState();
+    final state = _newState();
     await tester.pumpWidget(
       host(state, const SingleChildScrollView(child: WorkPrefsFields())),
     );

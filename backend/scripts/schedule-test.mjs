@@ -5,7 +5,7 @@ import 'dotenv/config';
 import { readFileSync } from 'node:fs';
 import { supabaseAdmin } from '../src/config/supabase.js';
 
-const BASE = 'http://localhost:3000';
+const BASE = process.env.API_URL || 'http://localhost:3000';
 const rnd = Math.random().toString(16).slice(2, 14);
 const email = `device-test-${rnd}@chrono.app`;
 

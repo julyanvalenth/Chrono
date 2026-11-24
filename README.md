@@ -65,6 +65,10 @@ dart run flutter_native_splash:create
 While the app signs in and loads the schedule it shows the same logo (`_Loading` in `app_shell.dart`),
 so the native splash hands over without a jump.
 
+## Deploy
+
+Backend on Vercel, Android APK on GitHub Releases (built by GitHub Actions): see [DEPLOY.md](DEPLOY.md).
+
 ## Backend (Supabase + Gemini)
 
 The backend is in [`backend/`](backend/README.md) (Express + Supabase + Gemini). Start it first, then run the app:
@@ -110,3 +114,10 @@ cd backend
 npm test
 npm run test:e2e
 ```
+
+## Contributors
+
+| | GitHub |
+| --- | --- |
+| Julyan Valenth Jonathan Sambouw | [julyanvalenth](https://github.com/julyanvalenth) |
+| IniEyyy | [IniEyyy](https://github.com/IniEyyy) |

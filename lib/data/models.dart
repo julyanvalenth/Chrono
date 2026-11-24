@@ -184,6 +184,12 @@ int get now {
 
 String get monthLabel => monthShortNames[appClock().month - 1].toUpperCase();
 
+String get greetingWord => now < h(12)
+    ? 'morning'
+    : now < h(18)
+    ? 'afternoon'
+    : 'evening';
+
 const dayStart = 7 * 60;
 const dayEnd = 23 * 60;
 

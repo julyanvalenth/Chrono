@@ -424,7 +424,9 @@ Reply respond(String text, List<Block> blocks, List<Deadline> deadlines) {
       final dueIdx = d.dueDate == null ? null : weekIndexOf(d.dueDate!, todayD);
       final lastDay =
           named ??
-          (dueIdx == null ? today + 2 : (dueIdx < today ? today : dueIdx));
+          (dueIdx == null
+              ? (today > 4 ? 6 : today + 2)
+              : (dueIdx < today ? today : dueIdx));
       final found = _firstSlot(blocks, len, named ?? today, named ?? lastDay);
       if (found == null) {
         return Reply(
@@ -491,7 +493,7 @@ Reply respond(String text, List<Block> blocks, List<Deadline> deadlines) {
               : (target == today ? now : h(8)));
       var to = target;
       var slot = findSlot(blocks, to, b.length, after, ignoreId: b.id);
-      if (slot == null && named == null && to < 6) {
+      if (slot == null && named == null && targetDay == null && to < 6) {
         to = to + 1;
         slot = findSlot(blocks, to, b.length, h(8), ignoreId: b.id);
       }
