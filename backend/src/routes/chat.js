@@ -7,10 +7,19 @@ const router = Router();
 router.use(requireAuth);
 
 /**
- * Determine "today" and "now" from the user's timezone.
- * Client can pass ?tz=Asia/Jakarta (or tz offset), otherwise UTC.
+ * Resolve "today" and "now" for the chat context.
+ *
+ * The app sends its own `day` and `now` because it already filtered the
+ * shortcut chips with them. Answering with a different clock makes the AI
+ * deny blocks the chips just offered, so those values win when present.
  */
 function todayAndNow(query) {
+  const day = Number.parseInt(query.day, 10);
+  const minutes = Number.parseInt(query.now, 10);
+  if (Number.isInteger(day) && day >= 0 && day <= 6 && Number.isInteger(minutes) && minutes >= 0) {
+    return { today: day, now: minutes };
+  }
+
   const tz = query.tz || 'UTC';
   let d;
   try {
@@ -27,7 +36,7 @@ function todayAndNow(query) {
   return { today, now };
 }
 
-// GET /api/chat  — get message history
+// GET /api/chat: get message history
 router.get('/', async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('chat_messages')
@@ -39,7 +48,7 @@ router.get('/', async (req, res) => {
   res.json(data);
 });
 
-// POST /api/chat  — send a message, get AI response
+// POST /api/chat: send a message, get AI response
 router.post('/', async (req, res) => {
   const { message } = req.body;
   if (!message?.trim()) {
@@ -134,13 +143,15 @@ router.post('/', async (req, res) => {
   res.json({
     user_message: userMsg,
     ai_message: aiMsg,
+    ai_ok: reply.ok !== false,
+    model: reply.model ?? null,
     proposal: proposalMsg ? { ...proposalMsg, deadlineId: proposalMsg.deadline_id } : null,
     deadline: newDeadline,
     new_deadline: newDeadline,
   });
 });
 
-// POST /api/chat/:id/apply  — apply proposed changes
+// POST /api/chat/:id/apply: apply proposed changes
 router.post('/:id/apply', async (req, res) => {
   const { data: proposal, error: pErr } = await supabaseAdmin
     .from('chat_messages')
@@ -253,7 +264,7 @@ router.post('/:id/apply', async (req, res) => {
   res.json({ applied: true, changes_count: changes.length, blocks: allBlocks, deadlines: allDeadlines, added_ids: addedIds });
 });
 
-// POST /api/chat/:id/dismiss  — dismiss proposed changes
+// POST /api/chat/:id/dismiss: dismiss proposed changes
 router.post('/:id/dismiss', async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('chat_messages')
@@ -272,7 +283,7 @@ router.post('/:id/dismiss', async (req, res) => {
   res.json({ dismissed: true });
 });
 
-// DELETE /api/chat  — clear chat history
+// DELETE /api/chat: clear chat history
 router.delete('/', async (req, res) => {
   const { error } = await supabaseAdmin
     .from('chat_messages')

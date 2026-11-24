@@ -1,4 +1,4 @@
-// Chrono AI Service — replaces the regex-based chrono_engine.dart with Gemini.
+// Chrono AI Service: replaces the regex-based chrono_engine.dart with Gemini.
 //
 // Strategy: Send Gemini the full schedule context and ask it to return
 // structured JSON with both the response text and proposed changes.
@@ -99,6 +99,8 @@ const SYSTEM_PROMPT = `You are Chrono, an AI scheduling assistant for university
 5. Keep responses brief, friendly, and in one or two sentences.
 6. Always use 24-hour time internally (minutes from midnight).
 7. The week uses day indices: 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday, 6=Sunday.
+8. The schedule context below is the source of truth. If the block the user names appears in today's table, propose the change. Never reply that it is missing when it is listed there.
+9. Match blocks by meaning, not exact spelling. "algorithm quiz prep" matches "Algorithm quiz prep" or "Quiz prep".
 
 ## What You Can Do
 - **Add events**: User says "Meeting at 3pm for 1h" → add a new block.
@@ -248,7 +250,7 @@ ${context}
 Respond with the JSON object described above.`;
 
   try {
-    const { text } = await generateJson(prompt);
+    const { text, model } = await generateJson(prompt);
 
     // Parse the JSON response
     let parsed;
@@ -266,6 +268,8 @@ Respond with the JSON object described above.`;
       changes: Array.isArray(parsed.changes) ? parsed.changes.map(normaliseChange) : [],
       deadline: parsed.deadline || null,
       deadlineId: parsed.deadlineId || null,
+      ok: true,
+      model,
     };
   } catch (err) {
     console.error('Gemini error:', err.message);
@@ -275,6 +279,8 @@ Respond with the JSON object described above.`;
       changes: [],
       deadline: null,
       deadlineId: null,
+      ok: false,
+      model: null,
     };
   }
 }
