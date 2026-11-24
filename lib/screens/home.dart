@@ -11,6 +11,13 @@ import '../widgets/composer.dart';
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
+  static String _greeting() {
+    if (now < h(12)) return 'Good morning';
+    if (now < h(17)) return 'Good afternoon';
+    if (now < h(21)) return 'Good evening';
+    return 'Good night';
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
@@ -42,13 +49,23 @@ class HomeScreen extends StatelessWidget {
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${days[today].long.toUpperCase()} · ${days[today].date} OCT', style: metaStyle),
+                Text('${days[today].long.toUpperCase()} · ${days[today].date} $monthLabel', style: metaStyle),
                 const SizedBox(height: 2),
                 Text(
-                  'Good morning,\n${state.firstName}',
+                  '${_greeting()},\n${state.firstName}',
                   style: poppins(29, weight: w600, lineHeight: 30.45, letterSpacing: -0.58),
                 ),
               ]),
+            ),
+            IconButton(
+              onPressed: state.syncing ? null : state.syncNow,
+              tooltip: state.pendingChanges ? 'Unsynced changes · tap to sync' : 'Sync now',
+              visualDensity: VisualDensity.compact,
+              icon: Icon(
+                state.pendingChanges ? Icons.sync_problem : Icons.sync,
+                size: 20,
+                color: state.syncing ? C.line(0.4) : state.pendingChanges ? C.lime : C.ink2,
+              ),
             ),
             const Avatar(),
           ]),

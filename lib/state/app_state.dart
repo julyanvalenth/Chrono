@@ -5,7 +5,6 @@ import 'package:flutter/widgets.dart';
 
 import '../data/models.dart';
 import '../logic/chrono_engine.dart';
-import '../logic/time_utils.dart' show overlaps;
 import '../services/api_client.dart';
 
 enum Stage { welcome, auth, source, prefs, building, app }
@@ -14,7 +13,7 @@ enum AuthMode { signUp, logIn }
 
 enum AppTab { home, today, chat, deadlines }
 
-enum FocusWindow { morning, afternoon, night }
+enum FocusWindow { morning, afternoon, evening, night }
 
 enum ProposalStatus { pending, applied, dismissed }
 
@@ -64,8 +63,8 @@ class Prefs {
 ///
 /// When [online] the app talks to chrono-backend (Supabase for data, Gemini
 /// for chat). Local state is updated first so the UI stays instant, then the
-/// change is saved to the server. When the backend can't be reached the app
-/// falls back to the built-in rule-based engine, like the original demo.
+/// change is saved to the server. When the backend can't be reached, chat
+/// falls back to the built-in rule-based engine.
 class AppState extends ChangeNotifier {
   AppState({ChronoApi? api}) : api = api ?? ChronoApi() {
     reset(notify: false);
@@ -89,8 +88,8 @@ class AppState extends ChangeNotifier {
   TextMessage get _greeting => TextMessage(
         'hello',
         fromUser: false,
-        text: 'Hi $firstName. Tell me what changed today — a meeting, a new deadline, feeling sick — '
-            'and I’ll rearrange the rest.',
+        text: 'Hi $firstName. Tell me what changed today: a meeting, a new deadline or feeling sick. '
+            'I’ll rearrange the rest.',
       );
 
   late Stage stage;
@@ -112,16 +111,18 @@ class AppState extends ChangeNotifier {
   void reset({bool notify = true}) {
     stage = Stage.welcome;
     tab = AppTab.home;
-    courses = [...seedCourses];
+    courses = [];
     prefs = const Prefs();
-    blocks = [...classBlocks(courses), ...seedFlexBlocks];
-    deadlines = [...seedDeadlines];
+    blocks = [];
+    deadlines = [];
     messages = [_greeting];
     thinking = false;
     selectedDay = today;
     sheetId = null;
     toast = null;
     scrollTo = null;
+    pendingChanges = false;
+    syncing = false;
     if (notify) notifyListeners();
   }
 
@@ -151,6 +152,7 @@ class AppState extends ChangeNotifier {
       _set(() {
         online = true;
         connectionError = null;
+        pendingChanges = false;
         _adoptUser(snap);
         if (snap.onboardingComplete) {
           _adopt(snap);
@@ -246,7 +248,7 @@ class AppState extends ChangeNotifier {
   }
 
   void _adopt(Snapshot snap) {
-    if (snap.courses.isNotEmpty) courses = snap.courses;
+    courses = snap.courses;
     blocks = snap.blocks;
     deadlines = snap.deadlines;
     prefs = Prefs(
@@ -279,12 +281,21 @@ class AppState extends ChangeNotifier {
 
   /// Run a server call in the background; local state is already updated.
   void _sync(Future<void> Function() call) {
-    if (!online) return;
+    if (!online) {
+      if (!pendingChanges) _set(() => pendingChanges = true);
+      return;
+    }
     call().catchError((Object e) {
       debugPrint('Chrono sync failed: $e');
-      _set(() => toast = ToastData(++_toastId, 'Couldn’t save to server'));
+      _set(() {
+        pendingChanges = true;
+        toast = ToastData(++_toastId, 'Couldn’t save to server');
+      });
     });
   }
+
+  /// A change is waiting for the server: made offline, or the save failed.
+  bool pendingChanges = false;
 
   // ---- navigation ----
   void goStage(Stage s) => _set(() => stage = s);
@@ -318,12 +329,10 @@ class AppState extends ChangeNotifier {
 
   /// Read a class timetable with the AI (photo/screenshot or typed text) and use
   /// the result as this user's courses. Returns a message to show when nothing
-  /// usable came back, or null on success. Offline it falls back to the demo courses.
+  /// usable came back, or null on success.
   Future<String?> readSchedule({String? text, Uint8List? image, String mimeType = 'image/jpeg'}) async {
     if (!online) {
-      await Future<void>.delayed(const Duration(milliseconds: 900));
-      _set(() => courses = [...seedCourses]);
-      return null; // demo data, like the original prototype
+      return 'Chrono needs the server to read your timetable. Check your connection and try again.';
     }
     try {
       final r = await api.parseSchedule(text: text, image: image, mimeType: mimeType);
@@ -356,24 +365,22 @@ class AppState extends ChangeNotifier {
 
   void finishOnboarding() {
     final lectures = classBlocks(courses);
-    // Starter (demo) blocks must not sit on top of a real class.
-    final starters = [
-      for (final f in seedFlexBlocks)
-        if (!lectures.any((l) => l.day == f.day && overlaps(l.start, l.end, f.start, f.end))) f,
-    ];
     _set(() {
       stage = Stage.app;
       tab = AppTab.home;
-      blocks = [...lectures, ...starters];
+      blocks = lectures;
     });
-    if (!online) return;
+    if (!online) {
+      _set(() => pendingChanges = true);
+      return;
+    }
     api
         .saveOnboarding(
           focus: prefs.focus.name,
           bedtime: prefs.bedtime,
           breakMin: prefs.breakMin,
           courses: courses,
-          flexBlocks: starters,
+          flexBlocks: const [],
           deadlines: deadlines,
         )
         .then((snap) => _set(() {
@@ -387,6 +394,7 @@ class AppState extends ChangeNotifier {
       debugPrint('Chrono onboarding sync failed: $e');
       _set(() {
         online = false;
+        pendingChanges = true;
         toast = ToastData(++_toastId, 'Server unavailable · working offline');
       });
     });
@@ -444,7 +452,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Ask Gemini through the backend. The app's demo clock is sent so the AI
+  /// Ask Gemini through the backend. The device clock is sent so the AI
   /// plans around the same "now" the UI shows.
   Future<void> _sendRemote(String text) async {
     try {
@@ -534,7 +542,10 @@ class AppState extends ChangeNotifier {
       });
     } catch (e) {
       debugPrint('Chrono apply failed: $e');
-      _set(() => toast = ToastData(++_toastId, 'Couldn’t save to server'));
+      _set(() {
+        pendingChanges = true;
+        toast = ToastData(++_toastId, 'Couldn’t save to server');
+      });
     }
   }
 
@@ -576,24 +587,59 @@ class AppState extends ChangeNotifier {
     _set(() => toast = null);
   }
 
-  /// Demo menu "Reset": clear local state and the server copy.
-  void resetDemo() {
-    reset(notify: false);
-    if (online) stage = Stage.source; // still logged in: start onboarding again
-    notifyListeners();
-    _sync(api.wipe);
-  }
+  /// True while [syncNow] talks to the server.
+  bool syncing = false;
 
-  /// Id of the first block called [title] today (demo menu shortcut).
-  String? blockIdByTitle(String title) => blocks.where((b) => b.day == today && b.title == title).firstOrNull?.id;
+  /// Push everything local to the server, replacing the server copy. Used when
+  /// edits were made offline or a background save failed.
+  Future<Snapshot> _pushAll() => api.saveOnboarding(
+        focus: prefs.focus.name,
+        bedtime: prefs.bedtime,
+        breakMin: prefs.breakMin,
+        courses: courses,
+        flexBlocks: [for (final b in blocks) if (b.kind != Kind.lecture) b],
+        deadlines: deadlines,
+      );
 
-  /// Jump straight to a screen (used by the demo menu).
-  void jump({Stage? stage, AppTab? tab, int? day, String? sheet}) => _set(() {
-        if (stage != null) this.stage = stage;
-        if (tab != null) this.tab = tab;
-        if (day != null) selectedDay = day;
-        sheetId = sheet;
+  /// Two-way sync: flush local changes that never reached the server, then load
+  /// the latest schedule, deadlines, chat and preferences.
+  Future<void> syncNow() async {
+    if (syncing) return;
+    _set(() => syncing = true);
+    try {
+      Snapshot? current;
+      if (!online) {
+        if (!await api.restoreSession()) {
+          _set(() {
+            syncing = false;
+            toast = ToastData(++_toastId, 'Log in to sync');
+          });
+          return;
+        }
+        final snap = await api.me();
+        current = snap;
+        _set(() {
+          online = true;
+          bootFailed = false;
+          connectionError = null;
+          _adoptUser(snap);
+        });
+      }
+      final snap = pendingChanges ? await _pushAll() : current ?? await api.me();
+      _set(() {
+        syncing = false;
+        pendingChanges = false;
+        _adopt(snap);
+        toast = ToastData(++_toastId, 'Synced with the server');
       });
+    } catch (e) {
+      debugPrint('Chrono sync failed: $e');
+      _set(() {
+        syncing = false;
+        toast = ToastData(++_toastId, 'Couldn’t reach the server');
+      });
+    }
+  }
 }
 
 class AppScope extends InheritedNotifier<AppState> {

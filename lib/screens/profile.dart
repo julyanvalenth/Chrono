@@ -65,6 +65,21 @@ class _ProfileSheet extends StatelessWidget {
             Text('Chrono plans focus time and breaks around these.', style: poppins(13, color: C.ink3)),
             const SizedBox(height: 16),
             const WorkPrefsFields(),
+            const SizedBox(height: 24),
+            Btn(
+              label: state.syncing
+                  ? 'Syncing…'
+                  : state.pendingChanges
+                      ? 'Sync unsaved changes'
+                      : 'Sync with server',
+              style: BtnStyle.ghost,
+              leading: Icon(
+                state.pendingChanges ? Icons.sync_problem : Icons.sync,
+                color: state.pendingChanges ? C.lime : C.ink2,
+                size: 19,
+              ),
+              onTap: state.syncing ? null : state.syncNow,
+            ),
             const SizedBox(height: 28),
             Btn(
               label: 'Log out',
