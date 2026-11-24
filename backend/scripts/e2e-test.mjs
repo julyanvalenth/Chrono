@@ -3,7 +3,7 @@
 import 'dotenv/config';
 import { supabaseAdmin } from '../src/config/supabase.js';
 
-const BASE = process.env.API_URL || 'http://localhost:3000'; // e.g. API_URL=https://chrono-theta-nine.vercel.app
+const BASE = process.env.API_URL || process.env.BASE || 'http://localhost:3000';
 let token = null;
 let failures = 0;
 
@@ -20,7 +20,7 @@ async function call(method, path, body, query) {
 }
 
 function check(name, ok, extra = '') {
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? '  — ' + extra : ''}`);
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? ': ' + extra : ''}`);
   if (!ok) failures++;
 }
 
@@ -56,13 +56,14 @@ token = r.data.access_token;
 r = await call('GET', '/api/me');
 check('GET /api/me (fresh user)', r.status === 200 && r.data.preferences.onboarding_complete === false, r.data.error);
 
-// 3. onboarding (same shape as the app's seed data)
+// 3. onboarding (same shape as the app's payload)
 const courses = [
   { code: 'ds', name: 'Data Structures', days: [0, 3], start_min: h(8), end_min: h(9, 40), room: 'B-302', selected: true },
   { code: 'stats', name: 'Statistics', days: [1, 3], start_min: h(10), end_min: h(11, 40), room: 'A-204', selected: true },
   { code: 'hci', name: 'Human–Computer Interaction', days: [4], start_min: h(9), end_min: h(10, 40), room: 'Lab 3', selected: false },
 ];
 const blocks = [
+  { id: 'quiz-3', day: 3, title: 'Algorithm quiz prep', kind: 'focus', start_min: h(13), end_min: h(14) },
   { id: 'gym-3', day: TMR, title: 'Gym', kind: 'personal', start_min: h(16), end_min: h(17) },
   { id: 'hci-essay-3', day: TMR, title: 'HCI essay draft', kind: 'task', start_min: h(14, 45), end_min: h(15, 45) },
   { id: 'lunch-3', day: TMR, title: 'Lunch', kind: 'breakTime', start_min: h(12), end_min: h(12, 45) },
@@ -75,16 +76,17 @@ r = await call('POST', '/api/me/onboarding', {
   courses, blocks, deadlines,
 });
 if (r.status !== 200) {
-  console.log(`FAIL  onboarding — ${r.data?.error}\n\nStopping: the database isn't usable yet (run supabase-schema.sql / supabase-grants.sql).`);
+  console.log(`FAIL  onboarding: ${r.data?.error}\n\nStopping: the database isn't usable yet (run supabase-schema.sql / supabase-grants.sql).`);
   process.exit(1);
 }
 const lectures = r.data.blocks?.filter(b => b.kind === 'lecture') ?? [];
 check('onboarding saved', r.status === 200 && r.data.preferences.onboarding_complete === true, r.data.error);
 check('onboarding: 4 lecture blocks (unselected course skipped)', lectures.length === 4, `got ${lectures.length}`);
-check('onboarding: 3 flex blocks with uuid ids', r.data.blocks.filter(b => b.kind !== 'lecture').length === 3);
+check('onboarding: 4 flex blocks with uuid ids', r.data.blocks.filter(b => b.kind !== 'lecture').length === 4);
 check('onboarding: deadline saved', r.data.deadlines.length === 1);
 let allBlocks = r.data.blocks;
 const bem = r.data.deadlines[0];
+const quiz = allBlocks.find(b => b.title === 'Algorithm quiz prep');
 const gym = allBlocks.find(b => b.title === 'Gym');
 const essay = allBlocks.find(b => b.title === 'HCI essay draft');
 const lunch = allBlocks.find(b => b.title === 'Lunch');
@@ -120,6 +122,15 @@ if (proposal) {
 // 6. Indonesian + question (no changes)
 r = await call('POST', '/api/chat', { message: 'Gimana jadwalku besok?' }, TZ);
 check('question answered, no proposal', r.status === 200 && !AI_FAILED.test(r.data.ai_message?.content ?? '') && !r.data.proposal, `"${r.data.ai_message?.content}"`);
+
+r = await call('POST', '/api/chat', { message: 'Skip algorithm quiz prep today' }, { day: 3, now: h(10, 40) });
+const skipAnswer = r.data.ai_message?.content ?? '';
+const removesQuiz = r.data.proposal?.changes.some(c => c.type === 'remove' && c.block_id === quiz.id) ?? false;
+check(
+  'skip named block uses the device day',
+  r.status === 200 && r.data.ai_ok === true && removesQuiz && !/don't have|not scheduled|no .*scheduled/i.test(skipAnswer),
+  `"${skipAnswer}", model=${r.data.model}, proposal=${JSON.stringify(r.data.proposal)}`,
+);
 
 // 7. deadline planning links the deadline
 r = await call('POST', '/api/chat', { message: 'Plan time for BEM event proposal' }, TZ);

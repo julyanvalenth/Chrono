@@ -15,16 +15,23 @@ List<String> suggestPrompts({
   final out = <String>[];
   final todays = dayBlocks(blocks, day);
 
-  final classesLeft = todays.where((b) => b.kind == Kind.lecture && b.end > now).toList();
-  final flexible = todays.where((b) => b.kind.flexible && !b.done && b.end > now).toList();
+  final classesLeft = todays
+      .where((b) => b.kind == Kind.lecture && b.end > now)
+      .toList();
+  final flexible = todays
+      .where((b) => b.kind.flexible && !b.done && b.end > now)
+      .toList();
   final openDeadlines = deadlines.where((d) => !d.done).toList()
     ..sort((a, b) {
-      if (a.urgent != b.urgent) return a.urgent ? -1 : 1;
-      return (a.estimate - a.planned).compareTo(b.estimate - b.planned);
+      if (a.isUrgent != b.isUrgent) return a.isUrgent ? -1 : 1;
+      return (a.estimate - a.plannedFor(blocks)).compareTo(
+        b.estimate - b.plannedFor(blocks),
+      );
     });
 
-  // Work that is still short of its estimate is the most useful thing to offer.
-  final behind = openDeadlines.where((d) => d.planned < d.estimate).toList();
+  final behind = openDeadlines
+      .where((d) => d.plannedFor(blocks) < d.estimate)
+      .toList();
   if (behind.isNotEmpty) out.add('Plan time for ${behind.first.title}');
 
   if (classesLeft.isNotEmpty) {
@@ -36,7 +43,12 @@ List<String> suggestPrompts({
     out.add('Skip ${flexible.first.title.toLowerCase()} today');
   }
 
-  final freeNow = gaps(blocks, day, now > h(8) ? now : h(8), h(22)).where((g) => g.length >= 60);
+  final freeNow = gaps(
+    blocks,
+    day,
+    now > h(8) ? now : h(8),
+    h(22),
+  ).where((g) => g.length >= 60);
   if (freeNow.isNotEmpty) out.add('Find me a focus block today');
 
   // Preferences: nudge toward the chosen focus window / bedtime.
