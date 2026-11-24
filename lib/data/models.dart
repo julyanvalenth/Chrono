@@ -118,26 +118,56 @@ class Deadline {
 }
 
 class DayInfo {
-  const DayInfo(this.short, this.long, this.date);
+  const DayInfo(this.short, this.long, this.date, this.month);
   final String short;
   final String long;
-  final int date;
+  final int date; // day of the month
+  final String month; // 'NOV'
 }
 
-
-const days = [
-  DayInfo('MON', 'Monday', 12),
-  DayInfo('TUE', 'Tuesday', 13),
-  DayInfo('WED', 'Wednesday', 14),
-  DayInfo('THU', 'Thursday', 15),
-  DayInfo('FRI', 'Friday', 16),
-  DayInfo('SAT', 'Saturday', 17),
-  DayInfo('SUN', 'Sunday', 18),
+const _dayNames = [
+  ('MON', 'Monday'),
+  ('TUE', 'Tuesday'),
+  ('WED', 'Wednesday'),
+  ('THU', 'Thursday'),
+  ('FRI', 'Friday'),
+  ('SAT', 'Saturday'),
+  ('SUN', 'Sunday'),
 ];
+const _months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
-/// Demo clock: Thursday 15 Oct, 10:40 — the "Happening now" state in the design.
-const today = 3;
-const now = 10 * 60 + 40;
+// ---- Real clock (device time) ----
+// The schedule is a weekly template (day 0 = Monday … 6 = Sunday); these map it
+// onto the current week. The backend works out "today" the same way from its own
+// clock plus the device's UTC offset.
+
+/// The current week, Monday first, with real dates.
+List<DayInfo> get days {
+  final n = DateTime.now();
+  final monday = n.day - (n.weekday - 1);
+  return [
+    for (var i = 0; i < 7; i++)
+      () {
+        final d = DateTime(n.year, n.month, monday + i); // DateTime rolls over month ends
+        return DayInfo(_dayNames[i].$1, _dayNames[i].$2, d.day, _months[d.month - 1]);
+      }(),
+  ];
+}
+
+/// Today's day index: 0 = Monday … 6 = Sunday.
+int get today => DateTime.now().weekday - 1;
+
+/// Tomorrow's day index. The week repeats, so after Sunday comes Monday.
+int get tomorrow => (today + 1) % 7;
+
+/// Minutes since midnight, device time.
+int get now {
+  final n = DateTime.now();
+  return n.hour * 60 + n.minute;
+}
+
+/// "Good morning" / "Good afternoon" / "Good evening" for the current time.
+String get greetingWord => now < h(12) ? 'morning' : now < h(18) ? 'afternoon' : 'evening';
 
 const dayStart = 7 * 60;
 const dayEnd = 23 * 60;

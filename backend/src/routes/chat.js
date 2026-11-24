@@ -7,24 +7,33 @@ const router = Router();
 router.use(requireAuth);
 
 /**
- * Determine "today" and "now" from the user's timezone.
- * Client can pass ?tz=Asia/Jakarta (or tz offset), otherwise UTC.
+ * Determine "today" (0=Mon … 6=Sun) and "now" (minutes from midnight) from the
+ * server's real clock, in the user's timezone. The server (Vercel) runs on UTC,
+ * so the client says where it is:
+ * - ?tz_offset=420 — minutes east of UTC (the app sends this; 420 = WIB)
+ * - ?tz=Asia/Jakarta — an IANA timezone name
+ * - otherwise UTC
  */
 function todayAndNow(query) {
-  const tz = query.tz || 'UTC';
-  let d;
-  try {
-    // Parse in user's timezone
-    const str = new Date().toLocaleString('en-US', { timeZone: tz });
-    d = new Date(str);
-  } catch {
-    d = new Date();
+  const offset = Number.parseInt(query.tz_offset, 10);
+  let jsDay, hours, minutes;
+
+  if (Number.isFinite(offset) && Math.abs(offset) <= 14 * 60) {
+    const d = new Date(Date.now() + offset * 60_000); // shift, then read as UTC
+    [jsDay, hours, minutes] = [d.getUTCDay(), d.getUTCHours(), d.getUTCMinutes()];
+  } else {
+    let d;
+    try {
+      d = new Date(new Date().toLocaleString('en-US', { timeZone: query.tz || 'UTC' }));
+    } catch {
+      d = new Date(new Date().toLocaleString('en-US', { timeZone: 'UTC' }));
+    }
+    [jsDay, hours, minutes] = [d.getDay(), d.getHours(), d.getMinutes()];
   }
+
   // JS getDay() returns 0=Sun, we need 0=Mon
-  const jsDay = d.getDay();
   const today = jsDay === 0 ? 6 : jsDay - 1;
-  const now = d.getHours() * 60 + d.getMinutes();
-  return { today, now };
+  return { today, now: hours * 60 + minutes };
 }
 
 // GET /api/chat  — get message history

@@ -283,9 +283,11 @@ class ChronoApi {
     return [for (final j in res as List) deadlineFromJson(j)];
   }
 
-  /// Send a chat message. [day]/[now] are the app's clock so the AI sees the same "now" as the UI.
-  Future<ChatReply> chat(String message, {required int day, required int now}) async {
-    final res = await _send('POST', '/api/chat', body: {'message': message}, query: {'day': '$day', 'now': '$now'});
+  /// Send a chat message. The server works out "today" and "now" from its own clock;
+  /// the device's UTC offset tells it which timezone the user is in (e.g. 420 for WIB).
+  Future<ChatReply> chat(String message) async {
+    final offset = DateTime.now().timeZoneOffset.inMinutes;
+    final res = await _send('POST', '/api/chat', body: {'message': message}, query: {'tz_offset': '$offset'});
     final ai = res['ai_message'] as Map<String, dynamic>;
     final proposal = res['proposal'] as Map<String, dynamic>?;
     final nd = res['new_deadline'] as Map<String, dynamic>?;

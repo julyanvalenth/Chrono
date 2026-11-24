@@ -42,10 +42,10 @@ class HomeScreen extends StatelessWidget {
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${days[today].long.toUpperCase()} · ${days[today].date} OCT', style: metaStyle),
+                Text('${days[today].long.toUpperCase()} · ${days[today].date} ${days[today].month}', style: metaStyle),
                 const SizedBox(height: 2),
                 Text(
-                  'Good morning,\n${state.firstName}',
+                  'Good $greetingWord,\n${state.firstName}',
                   style: poppins(29, weight: w600, lineHeight: 30.45, letterSpacing: -0.58),
                 ),
               ]),

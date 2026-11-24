@@ -69,6 +69,25 @@ class Prefs {
 class AppState extends ChangeNotifier {
   AppState({ChronoApi? api}) : api = api ?? ChronoApi() {
     reset(notify: false);
+    _startClock();
+  }
+
+  Timer? _clock;
+
+  /// Redraw on every new minute so "now" (the now line, "Happening now",
+  /// minutes left, the greeting and the date) follows the real clock.
+  void _startClock() {
+    final n = DateTime.now();
+    _clock = Timer(Duration(seconds: 60 - n.second, milliseconds: -n.millisecond), () {
+      notifyListeners();
+      _clock = Timer.periodic(const Duration(minutes: 1), (_) => notifyListeners());
+    });
+  }
+
+  @override
+  void dispose() {
+    _clock?.cancel();
+    super.dispose();
   }
 
   final ChronoApi api;
@@ -444,11 +463,11 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Ask Gemini through the backend. The app's demo clock is sent so the AI
-  /// plans around the same "now" the UI shows.
+  /// Ask Gemini through the backend. The server uses its real clock in the
+  /// user's timezone, the same "now" the UI shows.
   Future<void> _sendRemote(String text) async {
     try {
-      final r = await api.chat(text, day: today, now: now);
+      final r = await api.chat(text);
       _set(() {
         thinking = false;
         messages = [

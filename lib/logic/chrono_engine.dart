@@ -60,7 +60,7 @@ class Reply {
   final String? deadlineId; // deadline whose planned time grows when applied
 }
 
-String dayName(int d) => d == today ? 'Today' : d == today + 1 ? 'Tomorrow' : days[d].long;
+String dayName(int d) => d == today ? 'Today' : d == tomorrow ? 'Tomorrow' : days[d].long;
 
 String slotLabel(Slot s) => '${dayName(s.day)} ${range(s.start, s.end)}';
 
@@ -97,8 +97,8 @@ String _titleCase(String s) {
   return t[0].toUpperCase() + t.substring(1);
 }
 
-Block? _findBlock(List<Block> blocks, String lower, [int day = today]) {
-  for (final b in dayBlocks(blocks, day)) {
+Block? _findBlock(List<Block> blocks, String lower, [int? day]) {
+  for (final b in dayBlocks(blocks, day ?? today)) {
     final title = b.title.toLowerCase();
     if (lower.contains(title)) return b;
     if (title.split(' ').any((w) => w.length > 3 && lower.contains(w))) return b;
@@ -145,7 +145,7 @@ Reply _addEvent(List<Block> blocks, String text, int start) {
     var day = today;
     var to = findSlot(working, today, b.length, b.start > now ? b.start : now, ignoreId: b.id);
     if (to == null) {
-      day = today + 1;
+      day = tomorrow;
       to = findSlot(working, day, b.length, h(8), ignoreId: b.id);
     }
     if (to == null) continue;
@@ -188,10 +188,10 @@ Reply respond(String text, List<Block> blocks, List<Deadline> deadlines) {
     var working = [...blocks];
     final changes = <Change>[];
     for (final b in targets) {
-      final to = findSlot(working, today + 1, b.length, h(8), ignoreId: b.id);
+      final to = findSlot(working, tomorrow, b.length, h(8), ignoreId: b.id);
       if (to != null) {
-        changes.add(MoveChange(blockId: b.id, title: b.title, kind: b.kind, from: slotOf(b), to: Slot(today + 1, to.start, to.end)));
-        working = [for (final w in working) w.id == b.id ? w.copyWith(day: today + 1, start: to.start, end: to.end) : w];
+        changes.add(MoveChange(blockId: b.id, title: b.title, kind: b.kind, from: slotOf(b), to: Slot(tomorrow, to.start, to.end)));
+        working = [for (final w in working) w.id == b.id ? w.copyWith(day: tomorrow, start: to.start, end: to.end) : w];
       } else {
         changes.add(RemoveChange(blockId: b.id, title: b.title, kind: b.kind, from: slotOf(b)));
       }
@@ -223,7 +223,7 @@ Reply respond(String text, List<Block> blocks, List<Deadline> deadlines) {
       var day = today;
       var slot = findSlot(blocks, today, len, now);
       if (slot == null) {
-        day = today + 1;
+        day = tomorrow;
         slot = findSlot(blocks, day, len, h(8));
       }
       if (slot == null) {
@@ -254,7 +254,7 @@ Reply respond(String text, List<Block> blocks, List<Deadline> deadlines) {
       var day = today;
       var to = findSlot(blocks, day, b.length, b.end > now ? b.end : now, ignoreId: b.id);
       if (to == null) {
-        day = today + 1;
+        day = tomorrow;
         to = findSlot(blocks, day, b.length, h(8), ignoreId: b.id);
       }
       if (to == null) return Reply('There’s no ${duration(b.length)} slot left today or tomorrow for ${b.title}.');
@@ -279,7 +279,7 @@ Reply respond(String text, List<Block> blocks, List<Deadline> deadlines) {
       urgent: false,
       planned: 0,
     );
-    final slot = findSlot(blocks, today + 1, len > 90 ? 90 : len, h(8));
+    final slot = findSlot(blocks, tomorrow, len > 90 ? 90 : len, h(8));
     return Reply(
       'Added $title — due $when, about ${duration(len)}. ${slot != null ? 'I can start with ${duration(slot.length)} tomorrow at ${range(slot.start, slot.end)}.' : 'Tell me when you want to work on it.'}',
       deadline: deadline,
@@ -289,7 +289,7 @@ Reply respond(String text, List<Block> blocks, List<Deadline> deadlines) {
           : [
               AddChange(Block(
                 id: _newId('focus'),
-                day: today + 1,
+                day: tomorrow,
                 title: title,
                 kind: Kind.focus,
                 start: slot.start,

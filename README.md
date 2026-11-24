@@ -39,8 +39,9 @@ configuration.
 ## Structure
 
 - `lib/theme/tokens.dart` — colours, kind colours and type helper, taken from the Figma variables.
-- `lib/data/models.dart` — models plus seed data from the design. The demo clock is fixed at
-  Thursday 15 Oct, 10:40.
+- `lib/data/models.dart` — models plus seed data from the design. The schedule is a weekly
+  template (day 0 = Monday); `today`, `now` and `days` follow the device's real clock and dates.
+  The backend uses its own clock with the device's UTC offset (`?tz_offset=`), so both agree.
 - `lib/state/app_state.dart` — one `ChangeNotifier` with every action; widgets read it through `AppScope`.
 - `lib/logic/chrono_engine.dart` — rule-based stand-in for the AI. It handles "Org meeting at 3pm for 1h",
   "Skip gym today", "I'm sick, clear my afternoon", "Add Stats quiz due Monday, 3h",

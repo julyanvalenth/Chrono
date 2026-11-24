@@ -52,8 +52,9 @@ function buildContext(blocks, deadlines, prefs, today, now) {
   lines.push('');
 
   // Tomorrow's schedule
-  const tmr = today + 1;
-  if (tmr <= 6) {
+  // The week repeats, so after Sunday (6) comes Monday (0).
+  const tmr = (today + 1) % 7;
+  {
     const tmrBlocks = dayBlocks(blocks, tmr);
     lines.push(`## Tomorrow (${dayName(tmr, today)}, day index ${tmr})`);
     if (tmrBlocks.length === 0) {
