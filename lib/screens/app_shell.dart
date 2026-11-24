@@ -118,25 +118,27 @@ class _LoadingState extends State<_Loading> {
   Widget build(BuildContext context) {
     return Semantics(
       label: 'Loading Chrono',
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          const ChronoMark(size: 112, hole: 28),
-          Positioned(
-            bottom: MediaQuery.paddingOf(context).bottom + 96,
-            child: AnimatedOpacity(
-              opacity: _slow ? 1 : 0,
-              duration: const Duration(milliseconds: 300),
-              child: const SizedBox.square(
-                dimension: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.2,
-                  color: C.lime,
+      child: SizedBox.expand(
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            const ChronoMark(size: 112, hole: 28),
+            Positioned(
+              bottom: MediaQuery.paddingOf(context).bottom + 96,
+              child: AnimatedOpacity(
+                opacity: _slow ? 1 : 0,
+                duration: const Duration(milliseconds: 300),
+                child: const SizedBox.square(
+                  dimension: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.2,
+                    color: C.lime,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

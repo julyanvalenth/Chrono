@@ -94,7 +94,7 @@ flutter:
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
 
-# App icon — regenerate with: dart run flutter_launcher_icons
+# App icon. Regenerate with: dart run flutter_launcher_icons
 # (source images come from tool/make_brand_assets.py)
 flutter_launcher_icons:
   image_path: "assets/branding/app_icon.png"
@@ -109,13 +109,15 @@ flutter_launcher_icons:
     background_color: "#121116"
     theme_color: "#121116"
 
-# Launch (splash) screen — regenerate with: dart run flutter_native_splash:create
+# Launch (splash) screen. Regenerate with: dart run flutter_native_splash:create
 flutter_native_splash:
   color: "#121116"
   image: "assets/branding/splash_logo.png"
   android_12:
     color: "#121116"
-    image: "assets/branding/splash_logo_android12.png"
+    # Android 12 can animate the system icon from the launcher position.
+    # Flutter draws the centered logo after the native window hands off.
+    image: "assets/branding/splash_logo_android12_transparent.png"
     icon_background_color: "#121116"
   android: true
   ios: true

@@ -2,12 +2,14 @@ import 'package:chrono/data/models.dart';
 import 'package:chrono/logic/suggestions.dart';
 import 'package:chrono/main.dart';
 import 'package:chrono/services/api_client.dart';
+import 'package:chrono/screens/app_shell.dart';
 import 'package:chrono/screens/deadlines.dart';
 import 'package:chrono/screens/home.dart';
 import 'package:chrono/screens/onboarding.dart';
 import 'package:chrono/screens/today.dart';
 import 'package:chrono/state/app_state.dart';
 import 'package:chrono/theme/tokens.dart';
+import 'package:chrono/widgets/chrono_mark.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -81,6 +83,17 @@ void main() {
     final state = _newState();
     await tester.pumpWidget(ChronoApp(state: state));
     expect(find.byType(ChronoApp), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('loading logo stays centered', (tester) async {
+    final state = _newState()..booting = true;
+    await tester.pumpWidget(ChronoApp(state: state));
+
+    final mark = find.byType(ChronoMark);
+    expect(mark, findsOneWidget);
+    expect(tester.getCenter(mark), tester.getCenter(find.byType(AppShell)));
 
     await tester.pumpWidget(const SizedBox());
   });
