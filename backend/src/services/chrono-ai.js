@@ -23,10 +23,6 @@ function buildContext(blocks, deadlines, prefs, today, now) {
 
   // Today's schedule
   const todayBlocks = dayBlocks(blocks, today);
-  lines.push(`## Week`);
-  lines.push(`Day indices this week: ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((n, i) => `${i}=${n}`).join(', ')}.`);
-  lines.push(`Today is day index ${today}. Days before ${today} are in the past.`);
-  lines.push('');
   lines.push(`## Today (${dayName(today, today)}, day index ${today})`);
   lines.push(`Current time: ${clock(now)}`);
   lines.push(`Free time today: ${duration(freeMinutes(blocks, today))}`);
@@ -100,7 +96,7 @@ const SYSTEM_PROMPT = `You are Chrono, an AI scheduling assistant for university
 2. **Flexible blocks** (focus, task, personal, breakTime) can be moved or removed.
 3. When adding a new block that overlaps a flexible block, propose moving the flexible block to the next available free slot.
 4. When you can't find a free slot today, look at tomorrow.
-5. Keep responses brief, friendly, and in one or two sentences. Reply in the same language the user writes in (e.g. Indonesian or English).
+5. Keep responses brief, friendly, and in one or two sentences.
 6. Always use 24-hour time internally (minutes from midnight).
 7. The week uses day indices: 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday, 6=Sunday.
 
@@ -125,11 +121,11 @@ Return a JSON object with this exact structure:
     {
       "type": "add",
       "block": {
-        "title": "Meeting",
         "day": 3,
+        "title": "Meeting",
         "kind": "personal",
-        "start_min": 900,
-        "end_min": 960,
+        "start": 900,
+        "end": 960,
         "detail": "Added by Chrono"
       }
     },
@@ -137,43 +133,90 @@ Return a JSON object with this exact structure:
     // MOVE an existing block:
     {
       "type": "move",
-      "block_id": "the-existing-block-uuid",
+      "blockId": "the-existing-block-uuid",
       "title": "Block Title",
       "kind": "task",
-      "from": { "day": 3, "start_min": 885, "end_min": 945 },
-      "to": { "day": 3, "start_min": 960, "end_min": 1020 }
+      "from": { "day": 3, "start": 885, "end": 945 },
+      "to": { "day": 3, "start": 960, "end": 1020 }
     },
     
     // REMOVE a block:
     {
       "type": "remove",
-      "block_id": "the-existing-block-uuid",
+      "blockId": "the-existing-block-uuid",
       "title": "Block Title",
       "kind": "task",
-      "from": { "day": 3, "start_min": 960, "end_min": 1020 }
+      "from": { "day": 3, "start": 960, "end": 1020 }
     }
   ],
-  "new_deadline": null,
+  "deadline": null,
   // OR a new deadline object:
-  // "new_deadline": {
+  // "deadline": {
   //   "title": "Stats quiz prep",
   //   "course": "Statistics",
   //   "estimate": 180,
   //   "due": "Monday",
   //   "urgent": false
   // },
-  "deadline_id": null
-  // If a change adds study time for an existing deadline, set this to that deadline's ID
+  "deadlineId": null
+  // If a change adds study time for an existing deadline, set deadlineId to that deadline's ID
   // so the planned time gets updated.
 }
 
 IMPORTANT:
 - Use ONLY real block IDs from the schedule context when moving/removing.
-- For new blocks, do NOT include an "id" field — the server generates it.
-- Make sure start_min and end_min don't overlap with fixed lecture blocks.
+- For new blocks, do NOT include an "id" field - the server generates it.
+- Make sure start and end don't overlap with fixed lecture blocks.
 - When picking free slots, use the free-slot information provided in the context.
 - When the user just asks a question (like "how does my day look?"), return an empty changes array.
 - Always return valid JSON. No markdown, no code fences.`;
+
+/**
+ * The prompt asks Gemini for camelCase keys (start/end/blockId); the database
+ * and the app both use snake_case. Normalise here so everything downstream
+ * (validation, storage, the Flutter client) sees one shape.
+ */
+function normaliseSlot(slot) {
+  if (!slot) return slot;
+  return { day: slot.day, start_min: slot.start_min ?? slot.start, end_min: slot.end_min ?? slot.end };
+}
+
+function normaliseChange(change) {
+  if (change?.type === 'add') {
+    const b = change.block ?? {};
+    return {
+      type: 'add',
+      block: {
+        day: b.day,
+        title: b.title,
+        kind: b.kind,
+        start_min: b.start_min ?? b.start,
+        end_min: b.end_min ?? b.end,
+        detail: b.detail,
+      },
+    };
+  }
+  if (change?.type === 'move') {
+    return {
+      type: 'move',
+      block_id: change.block_id ?? change.blockId,
+      title: change.title,
+      kind: change.kind,
+      from: normaliseSlot(change.from),
+      to: normaliseSlot(change.to),
+    };
+  }
+  if (change?.type === 'remove') {
+    return {
+      type: 'remove',
+      block_id: change.block_id ?? change.blockId,
+      title: change.title,
+      kind: change.kind,
+      from: normaliseSlot(change.from),
+    };
+  }
+  return change;
+}
 
 /**
  * Send a user message to Gemini and get back a structured reply.
@@ -205,7 +248,7 @@ ${context}
 Respond with the JSON object described above.`;
 
   try {
-    const { text, model } = await generateJson(prompt);
+    const { text } = await generateJson(prompt);
 
     // Parse the JSON response
     let parsed;
@@ -220,84 +263,46 @@ Respond with the JSON object described above.`;
     // Validate the structure
     return {
       text: parsed.text || "I'm not sure how to help with that. Try telling me about a schedule change!",
-      changes: Array.isArray(parsed.changes) ? parsed.changes : [],
-      new_deadline: parsed.new_deadline || null,
-      deadline_id: parsed.deadline_id || null,
-      model,
+      changes: Array.isArray(parsed.changes) ? parsed.changes.map(normaliseChange) : [],
+      deadline: parsed.deadline || null,
+      deadlineId: parsed.deadlineId || null,
     };
   } catch (err) {
     console.error('Gemini error:', err.message);
     // Fallback response
     return {
-      text: "Sorry, I had trouble processing that. Try again — something like \"Meeting at 3pm for 1h\" or \"How does my day look?\"",
+      text: "Sorry, I had trouble processing that. Try again - something like \"Meeting at 3pm for 1h\" or \"How does my day look?\"",
       changes: [],
-      new_deadline: null,
-      deadline_id: null,
-      error: true,
+      deadline: null,
+      deadlineId: null,
     };
   }
 }
 
-const KINDS = new Set(['lecture', 'focus', 'task', 'personal', 'breakTime']);
-
-function validSlot(day, start, end) {
-  return Number.isInteger(day) && day >= 0 && day <= 6 &&
-    Number.isInteger(start) && Number.isInteger(end) &&
-    start >= 0 && end <= 24 * 60 && start < end;
-}
-
-function hitsLecture(blocks, day, start, end, ignoreId = null) {
-  return blocks.some(b => b.kind === 'lecture' && b.id !== ignoreId && b.day === day &&
-    overlaps(b.start_min, b.end_min, start, end));
-}
-
 /**
  * Validate proposed changes against the current blocks.
- * Drops anything invalid (unknown IDs, touching lectures, bad times, clashing
- * with a class) and fills title/kind/from from the real block so the client
- * never shows data the model made up.
+ * Removes invalid move/remove changes (bad IDs, moving lectures, etc.)
  */
 export function validateChanges(changes, blocks) {
   const blockMap = new Map(blocks.map(b => [b.id, b]));
   const valid = [];
-  const touched = new Set();
 
-  for (const c of changes ?? []) {
-    if (c?.type === 'add') {
-      const b = c.block ?? {};
-      const day = Number(b.day), start = Number(b.start_min), end = Number(b.end_min);
-      if (!b.title || !validSlot(day, start, end)) continue;
-      if (hitsLecture(blocks, day, start, end)) continue;
-      const kind = KINDS.has(b.kind) && b.kind !== 'lecture' ? b.kind : 'personal';
-      valid.push({
-        type: 'add',
-        block: { title: String(b.title), day, kind, start_min: start, end_min: end, detail: b.detail || 'Added by Chrono' },
-      });
-    } else if (c?.type === 'move') {
+  for (const c of changes) {
+    if (c.type === 'add') {
+      // Add changes just need valid times
+      if (c.block && c.block.start_min < c.block.end_min) {
+        valid.push(c);
+      }
+    } else if (c.type === 'move') {
       const target = blockMap.get(c.block_id);
-      if (!target || target.kind === 'lecture' || touched.has(target.id)) continue;
-      const day = Number(c.to?.day ?? target.day), start = Number(c.to?.start_min), end = Number(c.to?.end_min);
-      if (!validSlot(day, start, end) || hitsLecture(blocks, day, start, end)) continue;
-      touched.add(target.id);
-      valid.push({
-        type: 'move',
-        block_id: target.id,
-        title: target.title,
-        kind: target.kind,
-        from: { day: target.day, start_min: target.start_min, end_min: target.end_min },
-        to: { day, start_min: start, end_min: end },
-      });
-    } else if (c?.type === 'remove') {
+      if (target && target.kind !== 'lecture' && c.to?.start_min < c.to?.end_min) {
+        valid.push(c);
+      }
+    } else if (c.type === 'remove') {
       const target = blockMap.get(c.block_id);
-      if (!target || target.kind === 'lecture' || touched.has(target.id)) continue;
-      touched.add(target.id);
-      valid.push({
-        type: 'remove',
-        block_id: target.id,
-        title: target.title,
-        kind: target.kind,
-        from: { day: target.day, start_min: target.start_min, end_min: target.end_min },
-      });
+      if (target && target.kind !== 'lecture') {
+        valid.push(c);
+      }
     }
   }
 
