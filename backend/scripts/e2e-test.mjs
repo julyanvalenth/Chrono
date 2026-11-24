@@ -3,7 +3,7 @@
 import 'dotenv/config';
 import { supabaseAdmin } from '../src/config/supabase.js';
 
-const BASE = 'http://localhost:3000';
+const BASE = process.env.API_URL || 'http://localhost:3000'; // e.g. API_URL=https://chrono-theta-nine.vercel.app
 let token = null;
 let failures = 0;
 

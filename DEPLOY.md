@@ -31,7 +31,7 @@ each person signs up with their own account in the app.
    | `GEMINI_API_KEY` | your Gemini key |
    | `GEMINI_MODEL` | `gemini-flash-lite-latest,gemini-3-flash-preview,gemini-3.8-flash,gemini-flash-latest` |
 
-5. **Deploy**. When it's done, copy the domain (e.g. `https://chrono-xxxx.vercel.app`) and open
+5. **Deploy**. When it's done, copy the domain (e.g. `https://chrono-theta-nine.vercel.app`) and open
    `https://<your-domain>/api/health` — it should say `"database": "configured"` and list the Gemini models.
 
 How it runs: `backend/api/index.js` exposes the Express app (`backend/app.js`) as one serverless

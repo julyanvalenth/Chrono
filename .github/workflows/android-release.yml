@@ -27,7 +27,7 @@ on:
 permissions: {} # nothing by default; each job asks for what it needs
 
 env:
-  CHRONO_API_URL: https://chrono-backend.vercel.app
+  CHRONO_API_URL: https://chrono-theta-nine.vercel.app
   FLUTTER_VERSION: 3.50.1 # same as the team's local setup (see README)
 
 jobs:
