@@ -36,8 +36,9 @@ migrate_working_dir/
 # Symbolication related
 app.*.symbols
 
-# Local debug screenshots
+# Local debug screenshots and UI dumps
 /tool/*.png
+/tool/*.xml
 
 # Obfuscation related
 app.*.map.json
