@@ -1,20 +1,25 @@
 # Chrono — Flutter app
 
 Native mobile app (Android + iOS) for the Chrono AI scheduler, built from
-`CHRONO.fig` (16 screens). Flutter 3.41 / Dart 3.11. The only package is `google_fonts`
-(Poppins).
+`CHRONO.fig` (16 screens). Flutter 3.50 / Dart 3.14. Packages: `google_fonts`
+(Poppins), `http`, `shared_preferences`, `image_picker`.
 
 ## Run
 
 ```powershell
 flutter pub get
-flutter emulators --launch Pixel_8
+flutter emulators --launch Medium_Phone_API_36.1
 flutter run
 ```
 
 Or plug in an Android phone with USB debugging on and run `flutter run`.
 Build an installable APK with `flutter build apk --release`
 (output: `build/app/outputs/flutter-apk/app-release.apk`).
+
+In Android Studio the project needs the **Flutter** and **Dart** plugins (the Flutter
+plugin installs Dart with it) plus the Flutter SDK path set to `C:\src\flutter`.
+Without them Studio treats the folder as a plain Java module and offers no Run
+configuration.
 
 **Demo shortcut:** long-press the **Chrono** tab to jump to any screen or reset the demo data.
 
@@ -23,10 +28,12 @@ Build an installable APK with `flutter build apk --release`
 | Figma screen | File |
 | --- | --- |
 | Welcome, class schedule (choose / reading / found), preferences, building | `lib/screens/onboarding.dart` |
+| Sign up / log in | `lib/screens/auth.dart` |
 | Home | `lib/screens/home.dart` |
 | Today / other days timeline, now line, free slots | `lib/screens/today.dart` |
 | Chat (empty, proposed changes, applied) | `lib/screens/chat.dart` |
 | Deadlines (upcoming / done) | `lib/screens/deadlines.dart` |
+| Profile (name, work preferences, log out) | `lib/screens/profile.dart` |
 | Tab bar, toast, block bottom sheet, demo menu | `lib/screens/app_shell.dart` |
 
 ## Structure
@@ -40,8 +47,11 @@ Build an installable APK with `flutter build apk --release`
   "Plan time for …", "Move … " and "How does my day look?". To go live, replace `respond()` with a
   call to your backend/LLM that returns the same `Reply(text, changes)`.
 - `lib/logic/time_utils.dart` — free-time and slot-finding helpers.
+- `lib/logic/suggestions.dart` — builds the Home and Chat shortcut chips from today's blocks,
+  open deadlines, focus window and bedtime.
 
-Data is held in memory, so restarting the app resets the demo.
+With the backend running the schedule lives in Supabase, so it survives a restart. Without
+it the app keeps the in-memory state and falls back to the rule-based engine.
 
 ## App icon & splash
 
@@ -70,6 +80,13 @@ npm run dev      # http://localhost:3000
 
 Then `flutter run` from the repo root. Supabase and Gemini setup: [`backend/chrono-backend-guide.md`](backend/chrono-backend-guide.md).
 `backend/.env` holds the keys and is git-ignored. Copy `backend/.env.example` to start.
+
+Database scripts, run in this order in the Supabase SQL editor:
+
+1. `backend/supabase-schema.sql` — tables, indexes and RLS policies.
+2. `backend/supabase-grants.sql` — grants for `anon`, `authenticated` and `service_role`.
+3. `backend/supabase-reset.sql` — only when the schema drifted and you are fine dropping
+   the Chrono tables and starting clean.
 
 - Android emulator reaches the backend at `http://10.0.2.2:3000` (default).
 - Windows / web / iOS simulator use `http://localhost:3000`.

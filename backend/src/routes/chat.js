@@ -7,34 +7,27 @@ const router = Router();
 router.use(requireAuth);
 
 /**
- * Determine "today" (0=Mon … 6=Sun) and "now" (minutes from midnight).
- * - ?day=3&now=640 — use the client's clock (the app's demo clock does this)
- * - ?tz=Asia/Jakarta — compute from the server clock in that timezone
- * - otherwise UTC
+ * Determine "today" and "now" from the user's timezone.
+ * Client can pass ?tz=Asia/Jakarta (or tz offset), otherwise UTC.
  */
 function todayAndNow(query) {
-  const qDay = Number.parseInt(query.day, 10);
-  const qNow = Number.parseInt(query.now, 10);
-  if (qDay >= 0 && qDay <= 6 && qNow >= 0 && qNow < 24 * 60) {
-    return { today: qDay, now: qNow };
-  }
-
   const tz = query.tz || 'UTC';
   let d;
   try {
-    d = new Date(new Date().toLocaleString('en-US', { timeZone: tz }));
+    // Parse in user's timezone
+    const str = new Date().toLocaleString('en-US', { timeZone: tz });
+    d = new Date(str);
   } catch {
     d = new Date();
   }
-  const jsDay = d.getDay(); // 0=Sun
-  return { today: jsDay === 0 ? 6 : jsDay - 1, now: d.getHours() * 60 + d.getMinutes() };
+  // JS getDay() returns 0=Sun, we need 0=Mon
+  const jsDay = d.getDay();
+  const today = jsDay === 0 ? 6 : jsDay - 1;
+  const now = d.getHours() * 60 + d.getMinutes();
+  return { today, now };
 }
 
-function fail(res, error, status = 500) {
-  return res.status(status).json({ error: error?.message ?? String(error) });
-}
-
-// GET /api/chat  — message history
+// GET /api/chat  — get message history
 router.get('/', async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('chat_messages')
@@ -42,72 +35,86 @@ router.get('/', async (req, res) => {
     .eq('user_id', req.userId)
     .order('created_at');
 
-  if (error) return fail(res, error);
+  if (error) return res.status(500).json({ error: error.message });
   res.json(data);
 });
 
-// POST /api/chat  — send a message, get the AI reply (+ proposal)
+// POST /api/chat  — send a message, get AI response
 router.post('/', async (req, res) => {
-  const message = req.body?.message?.trim();
-  if (!message) return res.status(400).json({ error: 'message is required' });
-  if (message.length > 1000) return res.status(400).json({ error: 'message is too long' });
+  const { message } = req.body;
+  if (!message?.trim()) {
+    return res.status(400).json({ error: 'message is required' });
+  }
 
   const { today, now } = todayAndNow(req.query);
 
+  // Save user message
   const { data: userMsg, error: umErr } = await supabaseAdmin
     .from('chat_messages')
-    .insert({ user_id: req.userId, type: 'text', from_user: true, content: message })
+    .insert({
+      user_id: req.userId,
+      type: 'text',
+      from_user: true,
+      content: message.trim(),
+    })
     .select()
     .single();
-  if (umErr) return fail(res, umErr);
 
+  if (umErr) return res.status(500).json({ error: umErr.message });
+
+  // Fetch user's current data
   const [blocksRes, deadlinesRes, prefsRes] = await Promise.all([
     supabaseAdmin.from('blocks').select('*').eq('user_id', req.userId),
     supabaseAdmin.from('deadlines').select('*').eq('user_id', req.userId),
-    supabaseAdmin.from('preferences').select('*').eq('user_id', req.userId).maybeSingle(),
+    supabaseAdmin.from('preferences').select('*').eq('user_id', req.userId).single(),
   ]);
 
   const blocks = blocksRes.data || [];
   const deadlines = deadlinesRes.data || [];
   const prefs = prefsRes.data || { name: 'Student', focus_window: 'morning', bedtime: '23:00', break_minutes: 15 };
 
-  const reply = await chat(message, blocks, deadlines, prefs, today, now);
+  // Call Gemini
+  const reply = await chat(message.trim(), blocks, deadlines, prefs, today, now);
+
+  // Validate changes
   reply.changes = validateChanges(reply.changes, blocks);
 
-  const { data: aiMsg, error: aiErr } = await supabaseAdmin
+  // Save AI text response
+  const { data: aiMsg } = await supabaseAdmin
     .from('chat_messages')
-    .insert({ user_id: req.userId, type: 'text', from_user: false, content: reply.text })
+    .insert({
+      user_id: req.userId,
+      type: 'text',
+      from_user: false,
+      content: reply.text,
+    })
     .select()
     .single();
-  if (aiErr) return fail(res, aiErr);
 
-  // Existing deadline this plan is for (only if the id is real)
-  let deadlineId = deadlines.some(d => d.id === reply.deadline_id) ? reply.deadline_id : null;
-
-  let newDeadline = null;
-  if (reply.new_deadline?.title) {
-    const nd = reply.new_deadline;
-    const { data: dl, error: dlErr } = await supabaseAdmin
+  // If there are new deadlines, create them
+  let newDeadlineId = reply.deadlineId;
+  if (reply.deadline) {
+    const { data: dl } = await supabaseAdmin
       .from('deadlines')
       .insert({
         user_id: req.userId,
-        title: String(nd.title),
-        course: nd.course || 'Added in chat',
-        estimate: Number.parseInt(nd.estimate, 10) || 120,
-        due: nd.due || 'TBD',
-        urgent: Boolean(nd.urgent),
+        title: reply.deadline.title,
+        course: reply.deadline.course || 'Added in chat',
+        estimate: reply.deadline.estimate || 120,
+        due: reply.deadline.due || 'TBD',
+        urgent: reply.deadline.urgent ?? false,
         planned: 0,
       })
       .select()
       .single();
-    if (dlErr) return fail(res, dlErr);
-    newDeadline = dl;
-    deadlineId = dl.id;
+
+    if (dl) newDeadlineId = dl.id;
   }
 
+  // If there are proposed changes, save as a proposal message
   let proposalMsg = null;
   if (reply.changes.length > 0) {
-    const { data: pm, error: pmErr } = await supabaseAdmin
+    const { data: pm } = await supabaseAdmin
       .from('chat_messages')
       .insert({
         user_id: req.userId,
@@ -115,25 +122,25 @@ router.post('/', async (req, res) => {
         from_user: false,
         changes: reply.changes,
         status: 'pending',
-        deadline_id: deadlineId,
+        deadline_id: newDeadlineId,
       })
       .select()
       .single();
-    if (pmErr) return fail(res, pmErr);
     proposalMsg = pm;
   }
+
+  const newDeadline = reply.deadline ? { id: newDeadlineId, ...reply.deadline } : null;
 
   res.json({
     user_message: userMsg,
     ai_message: aiMsg,
-    proposal: proposalMsg,
+    proposal: proposalMsg ? { ...proposalMsg, deadlineId: proposalMsg.deadline_id } : null,
+    deadline: newDeadline,
     new_deadline: newDeadline,
-    ai_ok: !reply.error,
-    model: reply.model ?? null,
   });
 });
 
-// POST /api/chat/:id/apply  — apply a proposal's changes
+// POST /api/chat/:id/apply  — apply proposed changes
 router.post('/:id/apply', async (req, res) => {
   const { data: proposal, error: pErr } = await supabaseAdmin
     .from('chat_messages')
@@ -141,101 +148,112 @@ router.post('/:id/apply', async (req, res) => {
     .eq('id', req.params.id)
     .eq('user_id', req.userId)
     .eq('type', 'proposal')
-    .maybeSingle();
+    .single();
 
-  if (pErr || !proposal) return res.status(404).json({ error: 'Proposal not found' });
+  if (pErr || !proposal) {
+    return res.status(404).json({ error: 'Proposal not found' });
+  }
+
   if (proposal.status !== 'pending') {
     return res.status(400).json({ error: `Proposal already ${proposal.status}` });
   }
 
-  // Claim the proposal first so a double tap can't apply it twice.
-  const { data: claimed } = await supabaseAdmin
-    .from('chat_messages')
-    .update({ status: 'applied' })
-    .eq('id', proposal.id)
-    .eq('status', 'pending')
-    .select('id');
-  if (!claimed?.length) return res.status(400).json({ error: 'Proposal already resolved' });
-
-  // Like the app: only blocks touched by this proposal keep an origin badge.
-  await supabaseAdmin
-    .from('blocks')
-    .update({ origin: null })
-    .eq('user_id', req.userId)
-    .not('origin', 'is', null);
-
   const changes = proposal.changes || [];
-  const addedIds = [];
   let addedMinutes = 0;
+  const addedIds = [];
+  const touchedIds = [];
 
+  // Apply each change
   for (const c of changes) {
     if (c.type === 'add') {
-      const b = c.block;
-      const { data, error } = await supabaseAdmin
-        .from('blocks')
-        .insert({
-          user_id: req.userId,
-          day: b.day,
-          title: b.title,
-          kind: b.kind || 'personal',
-          start_min: b.start_min,
-          end_min: b.end_min,
-          detail: b.detail || 'Added by Chrono',
-          origin: 'added',
-        })
-        .select('id')
-        .single();
-      if (error) return fail(res, error);
-      addedIds.push(data.id);
-      addedMinutes += b.end_min - b.start_min;
+      const block = c.block;
+      const { data: created } = await supabaseAdmin.from('blocks').insert({
+        user_id: req.userId,
+        day: block.day,
+        title: block.title,
+        kind: block.kind || 'personal',
+        start_min: block.start_min,
+        end_min: block.end_min,
+        detail: block.detail || 'Added by Chrono',
+        origin: 'added',
+      }).select().single();
+      if (created) {
+        addedIds.push(created.id);
+        touchedIds.push(created.id);
+      }
+      addedMinutes += (block.end_min - block.start_min);
     } else if (c.type === 'move') {
-      const { error } = await supabaseAdmin
+      await supabaseAdmin
         .from('blocks')
-        .update({ day: c.to.day, start_min: c.to.start_min, end_min: c.to.end_min, origin: 'moved' })
+        .update({
+          day: c.to.day,
+          start_min: c.to.start_min,
+          end_min: c.to.end_min,
+          origin: 'moved',
+        })
         .eq('id', c.block_id)
         .eq('user_id', req.userId);
-      if (error) return fail(res, error);
+      touchedIds.push(c.block_id);
     } else if (c.type === 'remove') {
-      const { error } = await supabaseAdmin
+      await supabaseAdmin
         .from('blocks')
         .delete()
         .eq('id', c.block_id)
         .eq('user_id', req.userId);
-      if (error) return fail(res, error);
     }
   }
 
+  // Update proposal status
+  await supabaseAdmin
+    .from('chat_messages')
+    .update({ status: 'applied' })
+    .eq('id', req.params.id);
+
+  // Update deadline planned time if applicable
   if (proposal.deadline_id && addedMinutes > 0) {
     const { data: dl } = await supabaseAdmin
       .from('deadlines')
       .select('planned')
       .eq('id', proposal.deadline_id)
       .eq('user_id', req.userId)
-      .maybeSingle();
+      .single();
+
     if (dl) {
       await supabaseAdmin
         .from('deadlines')
         .update({ planned: dl.planned + addedMinutes })
-        .eq('id', proposal.deadline_id)
-        .eq('user_id', req.userId);
+        .eq('id', proposal.deadline_id);
     }
   }
 
-  const [allBlocks, allDeadlines] = await Promise.all([
-    supabaseAdmin.from('blocks').select('*').eq('user_id', req.userId).order('day').order('start_min'),
-    supabaseAdmin.from('deadlines').select('*').eq('user_id', req.userId).order('created_at'),
+  // Clear origin flags on other blocks (like the app does)
+  let originQuery = supabaseAdmin
+    .from('blocks')
+    .update({ origin: null })
+    .eq('user_id', req.userId)
+    .not('origin', 'is', null);
+  if (touchedIds.length > 0) originQuery = originQuery.not('id', 'in', `(${touchedIds.join(',')})`);
+  await originQuery;
+
+  // Return updated blocks and deadlines
+  const [{ data: allBlocks }, { data: allDeadlines }] = await Promise.all([
+    supabaseAdmin
+      .from('blocks')
+      .select('*')
+      .eq('user_id', req.userId)
+      .order('day')
+      .order('start_min'),
+    supabaseAdmin
+      .from('deadlines')
+      .select('*')
+      .eq('user_id', req.userId)
+      .order('created_at'),
   ]);
 
-  res.json({
-    applied: true,
-    changes_count: changes.length,
-    added_ids: addedIds,
-    blocks: allBlocks.data,
-    deadlines: allDeadlines.data,
-  });
+  res.json({ applied: true, changes_count: changes.length, blocks: allBlocks, deadlines: allDeadlines, added_ids: addedIds });
 });
 
-// POST /api/chat/:id/dismiss  — dismiss a proposal
+// POST /api/chat/:id/dismiss  — dismiss proposed changes
 router.post('/:id/dismiss', async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('chat_messages')
@@ -244,18 +262,24 @@ router.post('/:id/dismiss', async (req, res) => {
     .eq('user_id', req.userId)
     .eq('type', 'proposal')
     .eq('status', 'pending')
-    .select();
+    .select()
+    .single();
 
-  if (error || !data?.length) {
+  if (error || !data) {
     return res.status(404).json({ error: 'Proposal not found or already resolved' });
   }
+
   res.json({ dismissed: true });
 });
 
-// DELETE /api/chat  — clear history
+// DELETE /api/chat  — clear chat history
 router.delete('/', async (req, res) => {
-  const { error } = await supabaseAdmin.from('chat_messages').delete().eq('user_id', req.userId);
-  if (error) return fail(res, error);
+  const { error } = await supabaseAdmin
+    .from('chat_messages')
+    .delete()
+    .eq('user_id', req.userId);
+
+  if (error) return res.status(500).json({ error: error.message });
   res.json({ cleared: true });
 });
 

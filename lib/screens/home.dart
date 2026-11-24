@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../data/models.dart';
+import '../logic/suggestions.dart';
 import '../logic/time_utils.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
 import '../widgets/composer.dart';
-
-const quickPrompts = ['How does my day look?', 'Skip gym today', 'I’m sick, clear my afternoon'];
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -21,6 +20,14 @@ class HomeScreen extends StatelessWidget {
     final classesLeft = todays.where((b) => b.kind == Kind.lecture && b.end > now).length;
     final focus = todays.where((b) => b.kind == Kind.focus || b.kind == Kind.task).fold(0, (s, b) => s + b.length);
     final dueSoon = state.deadlines.where((d) => !d.done && d.urgent).take(2).toList();
+    final prompts = suggestPrompts(
+      blocks: state.blocks,
+      deadlines: state.deadlines,
+      focusWindow: state.prefs.focus.name,
+      bedtime: state.prefs.bedtime,
+      day: today,
+      now: now,
+    );
 
     void ask(String text) {
       state.goTab(AppTab.chat);
@@ -109,7 +116,7 @@ class HomeScreen extends StatelessWidget {
         Composer(home: true, onSubmit: ask),
         const SizedBox(height: 10),
         Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final p in quickPrompts) Chip2(p, onTap: () => ask(p)),
+          for (final p in prompts) Chip2(p, onTap: () => ask(p)),
         ]),
       ],
     );
