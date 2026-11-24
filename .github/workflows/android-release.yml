@@ -105,12 +105,22 @@ jobs:
         with:
           name: chrono-apk
 
+      # The Release is for users: just the app and how to install it. No list of
+      # commits / pull requests ("What's Changed"). GitHub itself always adds the
+      # "Source code" archives to a Release; that can't be turned off.
       - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
+          name: Chrono ${{ github.ref_name }}
           files: chrono-*.apk
           fail_on_unmatched_files: true
-          generate_release_notes: true
+          generate_release_notes: false
           body: |
-            **Install on Android:** download `chrono-${{ github.ref_name }}.apk` below on your phone,
-            open it, and allow "Install unknown apps" for your browser when asked.
-            Then create an account in the app.
+            ## 📲 Install Chrono on Android
+
+            1. On your Android phone, tap **`chrono-${{ github.ref_name }}.apk`** under **Assets** below to download it.
+            2. Open the downloaded file. If Android asks, allow **Install unknown apps** for your browser.
+            3. Open **Chrono** and create your account.
+
+            **Updating from an older version?** Uninstall the old Chrono first, then install this one.
+
+            Android only.
