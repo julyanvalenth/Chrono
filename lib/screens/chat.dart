@@ -2,19 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../data/models.dart';
 import '../logic/chrono_engine.dart';
+import '../logic/suggestions.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
 import '../widgets/chrono_mark.dart';
 import '../widgets/common.dart';
 import '../widgets/composer.dart';
-
-const chatPrompts = [
-  'How does my day look?',
-  'Org meeting at 3pm for 1h',
-  'Skip gym today',
-  'I’m sick, clear my afternoon',
-  'Add Stats quiz due Monday, 3h',
-];
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -53,6 +46,14 @@ class _ChatScreenState extends State<ChatScreen> {
       for (final m in state.messages) _MessageView(m),
       if (state.thinking) const _Typing(),
     ];
+    final prompts = suggestPrompts(
+      blocks: state.blocks,
+      deadlines: state.deadlines,
+      focusWindow: state.prefs.focus.name,
+      bedtime: state.prefs.bedtime,
+      day: today,
+      now: now,
+    );
 
     return Column(children: [
       Container(
@@ -87,9 +88,9 @@ class _ChatScreenState extends State<ChatScreen> {
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          itemCount: chatPrompts.length,
+          itemCount: prompts.length,
           separatorBuilder: (_, _) => const SizedBox(width: 8),
-          itemBuilder: (_, i) => Chip2(chatPrompts[i], onTap: state.thinking ? null : () => state.send(chatPrompts[i])),
+          itemBuilder: (_, i) => Chip2(prompts[i], onTap: state.thinking ? null : () => state.send(prompts[i])),
         ),
       ),
       Composer(onSubmit: state.send, busy: state.thinking),
