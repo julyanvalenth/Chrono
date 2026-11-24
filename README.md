@@ -103,3 +103,10 @@ to the schedule next time; tapping the avatar opens the profile (name, work pref
 Onboarding, block actions, deadlines, chat and Undo are saved to Supabase; chat replies come from Gemini.
 If the backend can't be reached the app keeps working offline with the built-in rule-based engine.
 `lib/services/api_client.dart` holds the HTTP client and JSON mapping.
+
+## Contributors
+
+| | GitHub |
+| --- | --- |
+| Julyan Valenth Jonathan Sambouw | [julyanvalenth](https://github.com/julyanvalenth) |
+| IniEyyy | [IniEyyy](https://github.com/IniEyyy) |
