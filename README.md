@@ -39,6 +39,7 @@ configuration.
 - `lib/theme/tokens.dart`: colours, kind colours and type helper, taken from the Figma variables.
 - `lib/data/models.dart`: models, the real device clock and the current week. New accounts start with no schedule data.
 - `lib/state/app_state.dart`: one `ChangeNotifier` with every action; widgets read it through `AppScope`.
+- `lib/logic/dates.dart`: real calendar dates, week labels and English/Indonesian date parsing.
 - `lib/logic/chrono_engine.dart`: local fallback for chat. It handles "Org meeting at 3pm for 1h",
   "Skip gym today", "I'm sick, clear my afternoon", "Add Stats quiz due Monday, 3h",
   "Plan time for …", "Move … " and "How does my day look?".
@@ -95,4 +96,17 @@ Onboarding, block actions, deadlines, chat and Undo are saved to Supabase; chat 
 Changes sync in the background. Failed or offline changes stay pending. Use the sync icon on Home or
 Sync with server in Profile to push pending changes, then pull the latest schedule.
 If the backend can't be reached, chat falls back to the built-in rule-based engine.
+Chat sends the device date, local time, timezone offset and selected day. A date named in the
+message wins over the selected day. Deadline due dates use `yyyy-MM-dd`, and planned minutes
+come from matching calendar blocks so moves and removals stay reflected in the UI.
 `lib/services/api_client.dart` holds the HTTP client and JSON mapping.
+
+## Checks
+
+```powershell
+flutter test
+flutter analyze
+cd backend
+npm test
+npm run test:e2e
+```
