@@ -1,9 +1,11 @@
-﻿import 'package:chrono/data/models.dart';
+import 'package:chrono/data/models.dart';
 import 'package:chrono/logic/suggestions.dart';
 import 'package:chrono/main.dart';
 import 'package:chrono/services/api_client.dart';
+import 'package:chrono/screens/deadlines.dart';
 import 'package:chrono/screens/home.dart';
 import 'package:chrono/screens/onboarding.dart';
+import 'package:chrono/screens/today.dart';
 import 'package:chrono/state/app_state.dart';
 import 'package:chrono/theme/tokens.dart';
 import 'package:flutter/material.dart';
@@ -11,12 +13,15 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Minimal host so a single screen can be mounted without the tab shell.
 Widget host(AppState state, Widget child) => AppScope(
-      state: state,
-      child: MaterialApp(
-        theme: ThemeData(brightness: Brightness.dark, scaffoldBackgroundColor: C.bg),
-        home: Scaffold(body: child),
-      ),
-    );
+  state: state,
+  child: MaterialApp(
+    theme: ThemeData(
+      brightness: Brightness.dark,
+      scaffoldBackgroundColor: C.bg,
+    ),
+    home: Scaffold(body: child),
+  ),
+);
 
 const _emptySnapshot = Snapshot(
   email: 'student@example.com',
@@ -121,7 +126,14 @@ void main() {
       ..online = true
       ..stage = Stage.app
       ..courses = [
-        const Course(id: 'old', name: 'Old course', days: [0], start: 480, end: 540, room: ''),
+        const Course(
+          id: 'old',
+          name: 'Old course',
+          days: [0],
+          start: 480,
+          end: 540,
+          room: '',
+        ),
       ];
 
     await state.syncNow();
@@ -178,7 +190,9 @@ void main() {
     expect(find.textContaining('Good '), findsWidgets);
   });
 
-  testWidgets('Home keeps the sync button visible for pending changes', (tester) async {
+  testWidgets('Home keeps the sync button visible for pending changes', (
+    tester,
+  ) async {
     final state = AppState()
       ..stage = Stage.app
       ..pendingChanges = true;
@@ -188,9 +202,61 @@ void main() {
     expect(find.byTooltip('Unsynced changes · tap to sync'), findsOneWidget);
   });
 
+  testWidgets('Deadlines shows live progress from calendar blocks', (
+    tester,
+  ) async {
+    appClock = () => DateTime(2026, 11, 24, 14, 5);
+    addTearDown(() => appClock = DateTime.now);
+    final state = AppState()
+      ..stage = Stage.app
+      ..blocks = [
+        const Block(
+          id: 'essay',
+          day: 2,
+          title: 'Essay',
+          kind: Kind.focus,
+          start: 540,
+          end: 630,
+        ),
+      ]
+      ..deadlines = [
+        const Deadline(
+          id: 'dl-1',
+          title: 'Essay',
+          course: 'English',
+          estimate: 180,
+          due: '2026-11-27',
+          urgent: false,
+          planned: 0,
+        ),
+      ];
+    await tester.pumpWidget(host(state, const DeadlinesScreen()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fri'), findsOneWidget);
+    expect(find.text('1h 30m / 3h planned'), findsOneWidget);
+    expect(find.text('1 OPEN · 0 DUE WITHIN A DAY'), findsOneWidget);
+  });
+
+  testWidgets('Today uses the selected day month at a year boundary', (
+    tester,
+  ) async {
+    appClock = () => DateTime(2026, 12, 31, 10);
+    addTearDown(() => appClock = DateTime.now);
+    final state = AppState()
+      ..stage = Stage.app
+      ..selectedDay = 4;
+    await tester.pumpWidget(host(state, const TodayScreen()));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('1 JAN'), findsOneWidget);
+  });
+
   testWidgets('work preferences offer more than three choices', (tester) async {
     final state = AppState();
-    await tester.pumpWidget(host(state, const SingleChildScrollView(child: WorkPrefsFields())));
+    await tester.pumpWidget(
+      host(state, const SingleChildScrollView(child: WorkPrefsFields())),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Evening'), findsOneWidget);
@@ -202,7 +268,9 @@ void main() {
 
   testWidgets('picking a preference stores it', (tester) async {
     final state = AppState();
-    await tester.pumpWidget(host(state, const SingleChildScrollView(child: WorkPrefsFields())));
+    await tester.pumpWidget(
+      host(state, const SingleChildScrollView(child: WorkPrefsFields())),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Evening'));

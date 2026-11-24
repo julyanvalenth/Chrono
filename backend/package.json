@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "test": "node --test --experimental-test-module-mocks scripts/dates.test.mjs scripts/chat-flow.test.mjs",
     "test:e2e": "node scripts/e2e-test.mjs"
   },
   "dependencies": {
