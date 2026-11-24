@@ -97,8 +97,8 @@ String _titleCase(String s) {
   return t[0].toUpperCase() + t.substring(1);
 }
 
-Block? _findBlock(List<Block> blocks, String lower, [int day = today]) {
-  for (final b in dayBlocks(blocks, day)) {
+Block? _findBlock(List<Block> blocks, String lower, [int? day]) {
+  for (final b in dayBlocks(blocks, day ?? today)) {
     final title = b.title.toLowerCase();
     if (lower.contains(title)) return b;
     if (title.split(' ').any((w) => w.length > 3 && lower.contains(w))) return b;
@@ -157,8 +157,8 @@ Reply _addEvent(List<Block> blocks, String text, int start) {
 
   final n = changes.length - 1;
   final text2 = n == 0
-      ? 'Got it — $title, today ${range(start, end)}. That time was free, so nothing else moves.'
-      : 'Got it — $title, today ${range(start, end)}. That overlaps $n flexible block${n > 1 ? 's' : ''}, so I moved ${n > 1 ? 'them' : 'it'} to your next free slot.';
+      ? 'Got it. $title is today ${range(start, end)}. That time was free, so nothing else moves.'
+      : 'Got it. $title is today ${range(start, end)}. That overlaps $n flexible block${n > 1 ? 's' : ''}, so I moved ${n > 1 ? 'them' : 'it'} to your next free slot.';
   return Reply(text2, changes: changes);
 }
 
@@ -207,10 +207,10 @@ Reply respond(String text, List<Block> blocks, List<Deadline> deadlines) {
     final b = _findBlock(blocks, t);
     if (b == null) return const Reply('I couldn’t find that block today. Try the name shown on your timeline.');
     if (b.kind == Kind.lecture) {
-      return Reply('${b.title} is a class, so I keep it fixed. You can still skip it — I just won’t plan around that.');
+      return Reply('${b.title} is a class, so I keep it fixed. You can still skip it. I just won’t plan around that.');
     }
     return Reply(
-      'Sure — I’ll take ${b.title} off today. That frees ${duration(b.length)} at ${range(b.start, b.end)}.',
+      'Sure. I’ll take ${b.title} off today. That frees ${duration(b.length)} at ${range(b.start, b.end)}.',
       changes: [RemoveChange(blockId: b.id, title: b.title, kind: b.kind, from: slotOf(b))],
     );
   }
@@ -281,7 +281,7 @@ Reply respond(String text, List<Block> blocks, List<Deadline> deadlines) {
     );
     final slot = findSlot(blocks, today + 1, len > 90 ? 90 : len, h(8));
     return Reply(
-      'Added $title — due $when, about ${duration(len)}. ${slot != null ? 'I can start with ${duration(slot.length)} tomorrow at ${range(slot.start, slot.end)}.' : 'Tell me when you want to work on it.'}',
+      'Added $title, due $when, about ${duration(len)}. ${slot != null ? 'I can start with ${duration(slot.length)} tomorrow at ${range(slot.start, slot.end)}.' : 'Tell me when you want to work on it.'}',
       deadline: deadline,
       deadlineId: deadline.id,
       changes: slot == null

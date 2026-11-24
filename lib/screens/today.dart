@@ -74,7 +74,7 @@ class _TodayScreenState extends State<TodayScreen> {
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(isToday ? 'Today' : days[day].long, style: poppins(30, weight: w600, lineHeight: 40, letterSpacing: -0.6)),
                 Text(
-                  '${days[day].long.toUpperCase()} · ${days[day].date} OCT · ${blocks.length} BLOCKS · ${duration(freeMinutes(state.blocks, day))} FREE',
+                  '${days[day].long.toUpperCase()} · ${days[day].date} $monthLabel · ${blocks.length} BLOCKS · ${duration(freeMinutes(state.blocks, day))} FREE',
                   style: metaStyle,
                 ),
               ]),

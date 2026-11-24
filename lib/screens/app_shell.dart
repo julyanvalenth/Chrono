@@ -246,10 +246,6 @@ class _TabBar extends StatelessWidget {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => state.goTab(tab),
-            // Hidden shortcut for demos: long-press the Chrono tab to jump to any screen.
-            onLongPress: tab == AppTab.chat
-                ? () => showDemoMenu(context)
-                : null,
             child: Column(
               children: [
                 const SizedBox(height: 4),
@@ -597,66 +593,4 @@ class _SheetLayerState extends State<_SheetLayer>
       ),
     );
   }
-}
-
-/* ---------------- Demo menu ---------------- */
-
-void showDemoMenu(BuildContext context) {
-  final state = AppScope.read(context);
-  final entries = <(String, VoidCallback)>[
-    ('Welcome', () => state.jump(stage: Stage.welcome)),
-    ('Class schedule', () => state.jump(stage: Stage.source)),
-    ('Work preferences', () => state.jump(stage: Stage.prefs)),
-    ('Building your week', () => state.jump(stage: Stage.building)),
-    ('Home', () => state.jump(stage: Stage.app, tab: AppTab.home)),
-    (
-      'Today',
-      () => state.jump(stage: Stage.app, tab: AppTab.today, day: today),
-    ),
-    (
-      'Friday',
-      () => state.jump(stage: Stage.app, tab: AppTab.today, day: today + 1),
-    ),
-    (
-      'Block details',
-      () => state.jump(
-        stage: Stage.app,
-        tab: AppTab.today,
-        day: today,
-        sheet: state.blockIdByTitle('Algorithm quiz prep'),
-      ),
-    ),
-    ('Chat with Chrono', () => state.jump(stage: Stage.app, tab: AppTab.chat)),
-    ('Deadlines', () => state.jump(stage: Stage.app, tab: AppTab.deadlines)),
-    ('Reset demo data', state.resetDemo),
-  ];
-  showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: C.sheet,
-    barrierColor: const Color(0x9E000000),
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-    ),
-    builder: (ctx) => SafeArea(
-      child: ListView(
-        shrinkWrap: true,
-        padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text('Jump to a screen', style: poppins(15, weight: w600)),
-          ),
-          for (final e in entries)
-            ListTile(
-              dense: true,
-              title: Text(e.$1, style: poppins(14, weight: w500)),
-              onTap: () {
-                Navigator.pop(ctx);
-                e.$2();
-              },
-            ),
-        ],
-      ),
-    ),
-  );
 }

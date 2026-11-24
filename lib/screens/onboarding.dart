@@ -21,13 +21,6 @@ EdgeInsets _screenPadding(BuildContext context, {double top = 14}) {
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
 
-  static const _preview = [
-    ('08:00', 'Data Structures', 237.0, null, Kind.lecture),
-    ('13:00', 'Quiz prep', 197.0, null, Kind.focus),
-    ('15:00', 'Org meeting', 277.0, 'JUST ADDED', null),
-    ('16:15', 'HCI essay', 217.0, 'MOVED', Kind.task),
-  ];
-
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
@@ -41,26 +34,11 @@ class WelcomeScreen extends StatelessWidget {
             const SizedBox(width: 8),
             Text('Chrono', style: poppins(17, weight: w700, letterSpacing: -0.34)),
           ]),
-          // The example day takes the free space; on very short screens it's dropped
-          // so the headline and buttons always fit.
           Expanded(
             child: LayoutBuilder(
               builder: (context, box) => box.maxHeight < 200
                   ? const SizedBox.shrink()
-                  : Center(
-                      child: Semantics(
-                        label: 'Example day',
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            for (final p in _preview) ...[
-                              _PreviewRow(time: p.$1, title: p.$2, width: p.$3, tag: p.$4, kind: p.$5),
-                              const SizedBox(height: 8),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
+                  : const Center(child: ChronoMark(size: 108, hole: 26, rest: C.surface2)),
             ),
           ),
           Text.rich(
@@ -74,7 +52,7 @@ class WelcomeScreen extends StatelessWidget {
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 342),
             child: Text(
-              'Tell Chrono what’s on your plate. It builds your day around classes and deadlines — and rearranges it when life happens.',
+              'Tell Chrono what’s on your plate. It builds your day around classes and deadlines, then rearranges it when life happens.',
               style: poppins(15, color: C.ink2, lineHeight: 22.5),
             ),
           ),
@@ -101,49 +79,6 @@ class WelcomeScreen extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-class _PreviewRow extends StatelessWidget {
-  const _PreviewRow({required this.time, required this.title, required this.width, this.tag, this.kind});
-  final String time;
-  final String title;
-  final double width;
-  final String? tag;
-  final Kind? kind; // null = added by Chrono
-
-  @override
-  Widget build(BuildContext context) {
-    final added = kind == null;
-    final style = added ? addedStyle : kindStyle(kind!);
-    final bar = added ? C.limeInk : (kind == Kind.task ? C.lime : style.bar);
-    return Row(children: [
-      SizedBox(
-        width: 46,
-        child: Text(time, style: poppins(10.5, weight: w500, color: added ? C.ink : C.ink3)),
-      ),
-      Flexible(
-        child: Container(
-          width: width,
-          height: 40,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: style.bg,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: added ? const [BoxShadow(color: Color(0x80000000), blurRadius: 24, offset: Offset(0, 10))] : null,
-          ),
-          child: Row(children: [
-            Container(width: 3, color: bar),
-            const SizedBox(width: 12),
-            Text(title, style: poppins(13, weight: w600, color: style.ink)),
-            const Spacer(),
-            if (tag != null)
-              Text(tag!, style: poppins(10, weight: w500, color: added ? C.limeTag : style.ink, letterSpacing: 0.4)),
-            const SizedBox(width: 15),
-          ]),
-        ),
-      ),
-    ]);
   }
 }
 
@@ -326,7 +261,7 @@ class _ScheduleSourceScreenState extends State<ScheduleSourceScreen> {
           _OptionCard(
             featured: true,
             title: 'Scan a timetable screenshot',
-            desc: 'Photo of your KRS or campus portal — AI reads courses, days and rooms.',
+            desc: 'Photo of your KRS or campus portal. AI reads courses, days and rooms.',
             onTap: _scan,
           ),
           const SizedBox(height: 10),
@@ -402,7 +337,7 @@ class _ScheduleSourceScreenState extends State<ScheduleSourceScreen> {
       case _SourceMode.found:
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(
-            '✓ FOUND ${state.courses.length} ${state.courses.length == 1 ? 'COURSE' : 'COURSES'} — UNTICK ANY TO SKIP',
+            '✓ FOUND ${state.courses.length} ${state.courses.length == 1 ? 'COURSE' : 'COURSES'}: UNTICK ANY TO SKIP',
             style: poppins(11, weight: w500, color: C.green, letterSpacing: 0.44),
           ),
           const SizedBox(height: 9),
@@ -580,7 +515,7 @@ class PreferencesScreen extends StatelessWidget {
   }
 }
 
-/// Focus window, bedtime and break pickers — used in onboarding and the profile.
+/// Focus window, bedtime and break pickers for onboarding and the profile.
 class WorkPrefsFields extends StatelessWidget {
   const WorkPrefsFields({super.key});
 
@@ -590,14 +525,15 @@ class WorkPrefsFields extends StatelessWidget {
     final prefs = state.prefs;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         PickLegend('I focus best in the…'),
-        Row(children: [
-          for (final (i, o) in const [
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final o in const [
             (FocusWindow.morning, 'Morning', '08–12'),
             (FocusWindow.afternoon, 'Afternoon', '13–17'),
+            (FocusWindow.evening, 'Evening', '17–19'),
             (FocusWindow.night, 'Night', '19–23'),
-          ].indexed) ...[
-            if (i > 0) const SizedBox(width: 8),
-            Expanded(
+          ])
+            SizedBox(
+              width: 152,
               child: PickChip(
                 on: prefs.focus == o.$1,
                 tall: true,
@@ -606,18 +542,17 @@ class WorkPrefsFields extends StatelessWidget {
                 onTap: () => state.setPrefs(focus: o.$1),
               ),
             ),
-          ],
         ]),
         const SizedBox(height: 20),
         PickLegend('Bedtime'),
         Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final t in const ['22:00', '23:00', '00:00'])
+          for (final t in const ['21:00', '21:30', '22:00', '22:30', '23:00', '23:30', '00:00', '00:30'])
             PickChip(on: prefs.bedtime == t, label: t, onTap: () => state.setPrefs(bedtime: t)),
         ]),
         const SizedBox(height: 20),
         PickLegend('Break between blocks'),
         Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final m in const [10, 15, 30])
+          for (final m in const [5, 10, 15, 20, 30, 45])
             PickChip(on: prefs.breakMin == m, label: '$m min', onTap: () => state.setPrefs(breakMin: m)),
         ]),
     ]);
@@ -650,8 +585,8 @@ class PickChip extends StatelessWidget {
       selected: on,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
-        height: tall ? 72 : 46,
-        padding: tall ? const EdgeInsets.fromLTRB(13, 13, 13, 13) : const EdgeInsets.symmetric(horizontal: 19),
+        constraints: BoxConstraints(minHeight: tall ? 72 : 46),
+        padding: tall ? const EdgeInsets.fromLTRB(13, 13, 13, 13) : const EdgeInsets.symmetric(horizontal: 19, vertical: 12),
         decoration: BoxDecoration(
           color: on ? C.ink : C.surface,
           borderRadius: BorderRadius.circular(tall ? 16 : 22),
@@ -661,8 +596,10 @@ class PickChip extends StatelessWidget {
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(label, style: poppins(14.5, weight: w600, color: fg)),
+                  const SizedBox(height: 6),
                   Text(hint!, style: poppins(11, color: fg.withValues(alpha: 0.75))),
                 ],
               )
