@@ -10,7 +10,7 @@ const router = Router();
 router.use(requireAuth);
 
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
-const MAX_IMAGE_BYTES = 7 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024; // base64 must stay under Vercel's 4.5 MB body limit
 
 router.post('/parse', async (req, res) => {
   const text = typeof req.body.text === 'string' ? req.body.text.trim() : '';
@@ -23,7 +23,7 @@ router.post('/parse', async (req, res) => {
     }
     const data = req.body.image.replace(/^data:[^;]+;base64,/, '');
     if (Buffer.byteLength(data, 'base64') > MAX_IMAGE_BYTES) {
-      return res.status(413).json({ error: 'Image is too large (max 7 MB)' });
+      return res.status(413).json({ error: 'Image is too large (max 3 MB). Try a screenshot instead of a full-size photo.' });
     }
     image = { data, mimeType };
   }
